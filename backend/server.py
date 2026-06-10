@@ -1,59 +1,23 @@
-from fastapi import FastAPI, APIRouter
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
+"""ShortCut AI — FastAPI app entry."""
 import logging
-from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List
-import uuid
-from datetime import datetime
 
+from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+from db.indexes import ensure_indexes
+from db.mongo import close as close_mongo
+from routers.assets import router as assets_router
+from routers.assets import stub_router as assets_stub_router
+from routers.auth import router as auth_router
+from routers.projects import router as projects_router
+from routers.users import router as users_router
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
+logger = logging.getLogger("shortcut")
 
-# Create the main app without a prefix
-app = FastAPI()
-
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
-
-
-# Define Models
-class StatusCheck(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-class StatusCheckCreate(BaseModel):
-    client_name: str
-
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.dict())
-    return status_obj
-
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
-    return [StatusCheck(**status_check) for status_check in status_checks]
-
-# Include the router in the main app
-app.include_router(api_router)
+app = FastAPI(title="ShortCut AI", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,13 +27,53 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+
+# Global error handler so all errors share the same envelope.
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_request: Request, exc: HTTPException):
+    detail = exc.detail
+    if isinstance(detail, dict) and "error" in detail:
+        body = detail
+    else:
+        body = {"error": {"code": "http_error", "message": str(detail)}}
+    return JSONResponse(status_code=exc.status_code, content=body)
+
+
+api = APIRouter(prefix="/api")
+api_v1 = APIRouter(prefix="/api/v1")
+
+api_v1.include_router(auth_router)
+api_v1.include_router(users_router)
+api_v1.include_router(projects_router)
+api_v1.include_router(assets_router)
+api_v1.include_router(assets_stub_router)
+
+
+@api.get("/")
+async def root():
+    return {"name": "ShortCut AI", "version": "0.1.0", "docs": "/api/docs"}
+
+
+@api.get("/health")
+async def health():
+    return {"ok": True}
+
+
+@api_v1.get("/health")
+async def health_v1():
+    return {"ok": True}
+
+
+app.include_router(api)
+app.include_router(api_v1)
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    await ensure_indexes()
+    logger.info("ShortCut AI ready")
+
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+async def on_shutdown() -> None:
+    await close_mongo()

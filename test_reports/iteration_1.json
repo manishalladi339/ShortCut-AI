@@ -1,0 +1,106 @@
+{
+  "summary": "Phase 2.1 testing for ShortCut AI: 22 backend pytest tests + frontend mobile flow checks via Playwright. 21/22 backend tests pass after a critical Mongo index workaround; 1 fails due to a JWT refresh-token JTI collision bug. Frontend welcome/sign-up/sign-in/dashboard/studio/profile/sign-out and new-project wizard all render and integrate. CRITICAL backend bugs found: (1) signup fails for the SECOND email user because users.google_id has a sparse-unique index but signup writes google_id=null (sparse does not skip null values); (2) /api/v1/auth/refresh returns 500 when called shortly after signup/login because refresh JWTs have no jti and identical iat → identical token hash → sessions.refresh_token_hash unique-index collision. CRITICAL frontend bug: /assets route returns 500 'Could not extract asset path from URL' because Metro/Expo bundler reserves /assets/* for static assets — the Expo Router segment must be renamed. testID mismatch: sign-in submit uses 'auth-login-submit-button' (PRD asked for 'auth-signin-submit-button'); new project wizard uses 'newproject-*' prefix (PRD asked for 'new-project-*'). Functionality is intact, only naming mismatches.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/v1/auth/signup",
+        "issue": "Second email-only user signup returns 500 DuplicateKeyError on users.google_id_1. Signup writes google_id=null, and a sparse unique index does NOT skip docs where the field is present-but-null. Fix: either omit google_id from the doc on email signup, or replace the sparse-unique index with a partial unique index { partialFilterExpression: { google_id: { $type: 'string' } } } in db/indexes.py. Reference: /app/backend/routers/auth.py:104 + /app/backend/db/indexes.py:9",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "POST /api/v1/auth/refresh",
+        "issue": "Returns 500 DuplicateKeyError on sessions.refresh_token_hash_1 when invoked within 1s of token issuance. Refresh JWT payload has only {sub, kind, iat, exp} — no jti — so two refresh tokens minted in the same second for the same user are byte-identical, producing the same SHA256 hash. Fix: add a per-token jti claim (uuid4) in core/security._issue_token. Reference: /app/backend/core/security.py:22-31",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "DELETE /api/v1/projects/{id}",
+        "issue": "Does not delete linked assets on disk — only unlinks project_id. Probably intentional (keep in library) but worth confirming."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Expo Router /assets route",
+        "issue": "Navigating to /assets in the web preview returns HTTP 500 with 'Could not extract asset path from URL' from Metro. Metro's static-asset middleware reserves /assets/*. Rename the segment to e.g. app/library/index.tsx or app/asset-library/index.tsx and update all router.push() and Linking targets. Reference: /app/frontend/app/assets/index.tsx",
+        "testID": "n/a",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "Sign-in submit button",
+        "issue": "testID is 'auth-login-submit-button' but the PRD/test spec calls it 'auth-signin-submit-button'. Rename for consistency. Reference: /app/frontend/app/(auth)/sign-in.tsx:136",
+        "testID": "auth-login-submit-button",
+        "priority": "LOW"
+      },
+      {
+        "component": "New Project wizard testIDs",
+        "issue": "Uses 'newproject-*' prefix (e.g. newproject-title-input, newproject-content-chip-podcast). PRD asked for 'new-project-*'. Pick one convention and stick to it across the codebase. Reference: /app/frontend/app/projects/new.tsx",
+        "testID": "newproject-*",
+        "priority": "LOW"
+      },
+      {
+        "component": "studio-new-project-fab",
+        "issue": "FAB testID is 'studio-new-project-button' (not '-fab'). Confirm naming.",
+        "testID": "studio-new-project-button",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Asset Library screen",
+        "issue": "/assets route is unreachable in web preview due to Metro static-asset path conflict. Real device build via Expo Go would have the same problem because the bundler asset path is also /assets there.",
+        "affected_testIDs": ["assets-upload-button", "assets-empty-state"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Pressable / View",
+        "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Likely emitted by a third-party component or a custom Pressable. Migrate any pointerEvents={...} prop to style={{ pointerEvents: ... }}."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_health.py",
+    "/app/backend/tests/test_auth.py",
+    "/app/backend/tests/test_projects.py",
+    "/app/backend/tests/test_assets.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "FIX signup duplicate-null bug: either drop google_id from user doc on email signup, or replace sparse-unique index with partialFilterExpression { google_id: { $type: 'string' } } in db/indexes.py. The testing agent already replaced the live index as a workaround so further tests could run — main agent should make the code change so the index ensures itself correctly on cold start.",
+    "FIX refresh JWT collision: add a unique jti claim (uuid4().hex) to _issue_token in core/security.py so refresh tokens issued in the same second are distinct.",
+    "FIX /assets route: rename the Expo Router segment from 'assets' to 'library' (or 'asset-library') and update all router.push('/assets...') call sites + the project-detail Upload button. Metro reserves /assets/* for the bundler.",
+    "Align testIDs with the PRD: rename 'auth-login-submit-button' → 'auth-signin-submit-button', and decide between 'newproject-*' and 'new-project-*' across new.tsx.",
+    "Migrate any pointerEvents prop to style.pointerEvents to silence the deprecation warning.",
+    "Re-run backend pytest after the two CRITICAL backend fixes — the workaround index drop is in place; main agent should ensure ensure_indexes() recreates the correct partial index on startup (will need to drop sparse index first if it pre-exists).",
+    "Optionally seed the demo user (demo@shortcut.ai / Demo12345!) into Mongo via a one-time script so /app/memory/test_credentials.md becomes accurate."
+  ],
+  "critical_code_review_comments": [
+    "db/indexes.py:9 — `sparse=True` does not exclude documents whose field is explicitly null. Use `partialFilterExpression` or omit the field from the doc.",
+    "core/security.py:28 — JWT payload has no jti; identical {sub, kind, iat, exp} produce identical tokens for the same second, breaking the sessions.refresh_token_hash unique index.",
+    "frontend/app/assets/index.tsx — route segment 'assets' collides with Metro's reserved /assets/* path; rename the segment.",
+    "auth.py:104 — On email signup, set google_id only when actually known; do not insert it as null."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (new)",
+    "/app/backend/tests/test_health.py (new)",
+    "/app/backend/tests/test_auth.py (new)",
+    "/app/backend/tests/test_projects.py (new)",
+    "/app/backend/tests/test_assets.py (new)",
+    "/app/backend/tests/__init__.py (new)",
+    "MongoDB live: dropped users.google_id_1 sparse index, recreated as partial unique on $type=string (TEMPORARY WORKAROUND so backend tests could pass; main agent must codify this in db/indexes.py before next deploy)"
+  ],
+  "success_rate": {
+    "backend": "95% (21/22 pytest cases pass; refresh-token rotation fails due to JTI collision bug)",
+    "frontend": "85% (welcome, signup, signin error, dashboard, studio, profile, sign-out, new-project wizard render all OK; /assets route 500s)"
+  },
+  "seed_data_creation": "No persistent seed data created. Tests dynamically create users with prefix 'test_'/'e2e_'/'wiz_'/'newproj_'. Projects/assets prefixed 'TEST_'. The demo user demo@shortcut.ai mentioned in test_credentials.md does NOT exist in DB yet — main agent should sign it up once or add a seed script.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/, run with `cd /app/backend && python -m pytest tests/ -v --junitxml=/app/test_reports/pytest/pytest_results.xml`. Tests auto-load EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. The users.google_id index was manually replaced with a partialFilterExpression in MongoDB; if backend restarts and ensure_indexes() tries to create a conflicting sparse index, signup will break again — verify the index spec after restart. The refresh-token test expects 200 on first refresh; if main agent adds a jti claim, the test will pass without changes.",
+  "rca_of_issue": "1) google_id duplicate: Mongo treats `google_id: null` as a real indexed value; `sparse=True` only skips documents where the field is absent, not where it is null. After the first email signup inserts `google_id: null`, the second email signup hits E11000 on google_id_1. Fix at insert site (omit the field) OR at index site (partialFilterExpression). 2) Refresh JWT collision: `_issue_token` builds payload from only sub/kind/iat/exp; two calls in the same wall-clock second for the same user produce byte-identical JWT → identical SHA256 → DuplicateKeyError on sessions.refresh_token_hash_1. Fix: add `\"jti\": uuid.uuid4().hex` to the payload. 3) /assets 500: Metro's connect middleware reserves `/assets/*` for bundle/static-asset serving in expo-router web; user navigation to /assets falls into the bundler's _processSingleAssetRequest and throws 'Could not extract asset path from URL'. Rename the router segment to avoid the collision."
+}
