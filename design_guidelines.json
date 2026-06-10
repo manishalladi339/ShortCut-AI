@@ -1,0 +1,205 @@
+{
+  "project_name": "ShortCut AI - Phase 2.1",
+  "theme": "Dark",
+  "archetype": "4 (Swiss & High-Contrast) + Creator Noir",
+  "overall_vibe": "Studio command center, sleek, heavy reliance on dark surfaces with vibrant 'active' states. Professional CapCut/Opus Clip vibes. Zero AI-slop.",
+  "colors": {
+    "background": "#09090B",
+    "surface_1": "#18181B",
+    "surface_2": "#27272A",
+    "surface_3": "#3F3F46",
+    "primary": "#FF4433",
+    "primary_muted": "rgba(255, 68, 51, 0.2)",
+    "ai_accent": "#00E5FF",
+    "ai_accent_muted": "rgba(0, 229, 255, 0.15)",
+    "text_high": "#FFFFFF",
+    "text_medium": "#A1A1AA",
+    "text_low": "#52525B",
+    "border": "#27272A",
+    "border_focus": "#FF4433",
+    "viral_score": {
+      "high": { "text": "#00FF66", "bg": "rgba(0, 255, 102, 0.15)", "border": "#00FF66" },
+      "medium": { "text": "#FFD60A", "bg": "rgba(255, 214, 10, 0.15)", "border": "#FFD60A" },
+      "low": { "text": "#FF4433", "bg": "rgba(255, 68, 51, 0.15)", "border": "#FF4433" }
+    }
+  },
+  "typography": {
+    "primary_font": "Outfit",
+    "secondary_font": "Manrope",
+    "rules": {
+      "h1": { "fontFamily": "Outfit-Bold", "fontSize": 36, "lineHeight": 44, "letterSpacing": -1 },
+      "h2": { "fontFamily": "Outfit-Bold", "fontSize": 28, "lineHeight": 34, "letterSpacing": -0.5 },
+      "h3": { "fontFamily": "Outfit-SemiBold", "fontSize": 20, "lineHeight": 28, "letterSpacing": 0 },
+      "body": { "fontFamily": "Manrope-Regular", "fontSize": 16, "lineHeight": 24, "letterSpacing": 0 },
+      "label": { "fontFamily": "Manrope-Medium", "fontSize": 14, "lineHeight": 20, "letterSpacing": 0 },
+      "chip": { "fontFamily": "Manrope-SemiBold", "fontSize": 14, "lineHeight": 20, "letterSpacing": 0.2 },
+      "caption": { "fontFamily": "Manrope-Medium", "fontSize": 12, "lineHeight": 16, "letterSpacing": 0 },
+      "overline": { "fontFamily": "Outfit-Bold", "fontSize": 11, "lineHeight": 16, "letterSpacing": 1.5, "textTransform": "uppercase" }
+    }
+  },
+  "spacing_and_layout": {
+    "base_unit": 4,
+    "screen_padding": 20,
+    "safe_area_strategy": "Use react-native-safe-area-context. Never hardcode top/bottom padding.",
+    "touch_targets": {
+      "min_height": 44,
+      "min_width": 44
+    },
+    "grid": {
+      "columns": 2,
+      "gap": 16
+    }
+  },
+  "components": {
+    "native_tabs": {
+      "style": "Liquid Glass fallback to Cupertino/Material",
+      "implementation": "Use expo-router Tabs. ScreenOptions: tabBarBackground -> <BlurView tint='dark' intensity={80} style={StyleSheet.absoluteFill} />. Set tabBarStyle position: 'absolute', borderTopWidth: 0, elevation: 0. On older Android, fallback to backgroundColor: 'rgba(24,24,27,0.95)'",
+      "activeTintColor": "#FF4433",
+      "inactiveTintColor": "#A1A1AA",
+      "height": 88
+    },
+    "buttons": {
+      "primary": {
+        "backgroundColor": "#FF4433",
+        "borderRadius": 12,
+        "paddingVertical": 16,
+        "paddingHorizontal": 24,
+        "alignItems": "center",
+        "justifyContent": "center",
+        "minHeight": 56
+      },
+      "secondary": {
+        "backgroundColor": "#18181B",
+        "borderWidth": 1,
+        "borderColor": "#3F3F46",
+        "borderRadius": 12,
+        "paddingVertical": 16,
+        "paddingHorizontal": 24,
+        "alignItems": "center",
+        "justifyContent": "center",
+        "minHeight": 56
+      },
+      "ai_action": {
+        "backgroundColor": "#00E5FF",
+        "borderRadius": 12,
+        "paddingVertical": 16,
+        "paddingHorizontal": 24,
+        "alignItems": "center",
+        "justifyContent": "center",
+        "minHeight": 56
+      }
+    },
+    "chip_scroller": {
+      "container": {
+        "height": 56,
+        "flexShrink": 0
+      },
+      "scroll_view": {
+        "horizontal": true,
+        "showsHorizontalScrollIndicator": false,
+        "contentContainerStyle": "paddingHorizontal: 20, alignItems: 'center', gap: 12"
+      },
+      "chip_item": {
+        "height": 36,
+        "borderRadius": 18,
+        "paddingHorizontal": 16,
+        "justifyContent": "center",
+        "alignItems": "center",
+        "backgroundColor": "#27272A",
+        "borderWidth": 1,
+        "borderColor": "transparent"
+      },
+      "chip_active": {
+        "backgroundColor": "rgba(255, 68, 51, 0.15)",
+        "borderColor": "#FF4433"
+      }
+    },
+    "viral_score_badge": {
+      "container": {
+        "flexDirection": "row",
+        "alignItems": "center",
+        "paddingHorizontal": 8,
+        "paddingVertical": 4,
+        "borderRadius": 6,
+        "borderWidth": 1,
+        "gap": 4
+      },
+      "icon": "Use Lucide/Phosphor Flame or Zap icon, size 14.",
+      "text": "fontFamily: Outfit-Bold, fontSize: 12"
+    },
+    "project_card": {
+      "container": {
+        "backgroundColor": "#18181B",
+        "borderRadius": 16,
+        "overflow": "hidden",
+        "borderWidth": 1,
+        "borderColor": "#27272A"
+      },
+      "thumbnail": {
+        "width": "100%",
+        "aspectRatio": 1.77,
+        "backgroundColor": "#27272A"
+      },
+      "content": {
+        "padding": 16,
+        "gap": 4
+      }
+    },
+    "inputs": {
+      "container": {
+        "backgroundColor": "#09090B",
+        "borderWidth": 1,
+        "borderColor": "#27272A",
+        "borderRadius": 12,
+        "minHeight": 56,
+        "paddingHorizontal": 16,
+        "color": "#FFFFFF",
+        "fontFamily": "Manrope-Regular",
+        "fontSize": 16
+      },
+      "focus": {
+        "borderColor": "#FF4433"
+      }
+    }
+  },
+  "test_ids_convention": {
+    "rule": "Every interactive and key informational element MUST include a testID attribute. Format is kebab-case by role.",
+    "examples": {
+      "login_button": "auth-login-submit-button",
+      "google_login": "auth-google-login-button",
+      "email_input": "auth-email-input",
+      "create_project": "dashboard-new-project-button",
+      "project_item": "studio-project-card-id",
+      "viral_score": "project-viral-score-badge",
+      "chip_category": "wizard-category-chip-name"
+    }
+  },
+  "media_urls": {
+    "podcast_asset": {
+      "url": "https://images.unsplash.com/photo-1589903308904-1010c2294adc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTJ8MHwxfHNlYXJjaHwyfHxwb2RjYXN0JTIwc3R1ZGlvJTIwbWljcm9waG9uZXxlbnwwfHx8fDE3ODEwODc3MjN8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Podcast studio microphone, use for project thumbnails or asset preview placeholders"
+    },
+    "fitness_asset": {
+      "url": "https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDJ8MHwxfHNlYXJjaHwzfHxmaXRuZXNzJTIwZ3ltJTIwd29ya291dHxlbnwwfHx8fDE3ODEwODc3MjN8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Fitness workout, use for 'Fitness' category template cover or project preview"
+    },
+    "travel_asset": {
+      "url": "https://images.unsplash.com/photo-1592979073287-84efcc0c9078?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTF8MHwxfHNlYXJjaHwzfHx0cmF2ZWwlMjB2bG9nJTIwYWVzdGhldGljfGVufDB8fHx8MTc4MTA4NzcyM3ww&ixlib=rb-4.1.0&q=85",
+      "description": "Travel aesthetic vlog, use for 'Vlog/Travel' category templates"
+    },
+    "user_profile": {
+      "url": "https://images.unsplash.com/photo-1544723795-3fb6469f5b39?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTF8MHwxfHNlYXJjaHwxfHxjb29sJTIwcHJvZmlsZSUyMHBpY3R1cmUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODEwODc3MjN8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Cool creator profile picture for the top right dashboard or profile screen"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the Dark Theme. No generic SaaS white interfaces.",
+    "Avoid Inter font entirely. Use Outfit for headings and Manrope for body text (use expo-font to load them or default to system ui-sans-serif with appropriate weights if fonts fail).",
+    "Implement the bottom tab bar with expo-router using absolute positioning and BlurView (Liquid Glass effect). Max 4 tabs: Dashboard, Studio, Hub, Profile.",
+    "Categories and creation modes MUST use the defined chip_scroller styles. No chip wrapping. Horizontal ScrollView only.",
+    "Implement testIDs across the board using the kebab-case role convention.",
+    "Use Lucide-React-Native for icons. For the Viral Score, use the Zap or Flame icon.",
+    "Ensure all touch targets are at least 44x44pt.",
+    "Use react-native-safe-area-context for all screen wrappers. Do NOT use standard padding for notch/home indicators."
+  ]
+}
