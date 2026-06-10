@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 2 re-test of ShortCut AI Phase 2.1. All 3 critical bugs from iteration 1 are FIXED and verified. Backend pytest suite 22/22 PASS (8.74s). Critical bug A — duplicate-signup 500 on users.google_id index — fixed via partialFilterExpression in db/indexes.py (drops legacy sparse index on startup and recreates as partial-unique-on-$type:string); verified by signing up Alice then Bob in the same session (both 201). Critical bug B — refresh-token DuplicateKeyError on sessions.refresh_token_hash — fixed by adding jti=uuid4().hex to the JWT payload in core/security._issue_token; verified by /auth/refresh immediately after signup (200, rotates both tokens). Critical bug C — Metro /assets reserved path collision — fixed by renaming Expo Router segment /app/frontend/app/assets/ → /app/frontend/app/library/; all router.push('/assets...') call sites updated to '/library'; /library now loads cleanly with the 'Upload your first asset' empty state. testID renames verified live in DOM: auth-signin-submit-button (signin), studio-new-project-fab (studio FAB), and the full new-project-* family in the project wizard (back, title, title-input, content-chip-*, mode-*, style-chip-*, platform-chip-*, prompt-input, submit-button). No regressions detected. No new bugs found. App ready for next phase.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Pressable (legacy)", "issue": "Pre-existing dev-mode console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' — non-blocking, not surfaced in this run; carries over from iteration 1 if still present in any third-party component."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_health.py",
+    "/app/backend/tests/test_auth.py",
+    "/app/backend/tests/test_projects.py",
+    "/app/backend/tests/test_assets.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "core/security.py:35 — jti=uuid4().hex added to JWT payload; refresh-token collision fix confirmed.",
+    "db/indexes.py:5-20 — _ensure_partial_unique drops legacy sparse index and recreates as partial unique on $type:string; idempotent on cold start.",
+    "frontend/app/library/index.tsx — route rename complete; all router.push sites updated. testID family is still 'assets-*' (assets-back, assets-upload-button, assets-empty-upload-button, assets-filter-chip-*) — this is internally consistent and matches the screen's domain ('Asset Library'), so no rename needed unless PRD asks for 'library-*'.",
+    "frontend/app/(auth)/sign-up.tsx — input testIDs are 'auth-name-input', 'auth-email-input', 'auth-password-input' (shared with sign-in), not 'auth-signup-name-input' etc. Reasonable since they are conceptually the same component; flag only if PRD demands per-screen prefixes."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (22/22 pytest)", "frontend": "100% (signup, dashboard, library empty state, studio FAB, new-project wizard, sign-in all OK)"},
+  "seed_data_creation": "None. Tests dynamically create users with prefixes test_/e2e_/stu_/alice_/bob_ etc. demo@shortcut.ai still not pre-seeded (see iteration_1 note); not blocking.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests at /app/backend/tests/, run with `cd /app/backend && python -m pytest tests/ -v --junitxml=/app/test_reports/pytest/pytest_results.xml`. Auth screens share testIDs: auth-name-input / auth-email-input / auth-password-input across sign-up and sign-in (sign-in just lacks the name field). Library route is /library (NOT /assets); empty-state CTA testID is 'assets-empty-upload-button' (kept assets- prefix on the screen-level testIDs even though the route is /library). Wizard testIDs all use 'new-project-' (hyphenated) prefix.",
+  "rca_of_issue": "All 3 root causes from iteration_1.json have been addressed at the source: (1) partialFilterExpression replaces sparse on google_id so null docs are not indexed; (2) jti claim makes every refresh JWT byte-unique even within the same second so SHA256(refresh_token) cannot collide; (3) Expo Router segment renamed off Metro's reserved /assets/* path. Verified via both pytest (22/22) and live Playwright walk-through against the public preview URL."
+}

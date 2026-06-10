@@ -52,7 +52,7 @@ export default function Studio() {
         <Pressable
           style={styles.fab}
           onPress={() => router.push("/projects/new")}
-          testID="studio-new-project-button"
+          testID="studio-new-project-fab"
         >
           <Ionicons name="add" size={22} color="#FFF" />
         </Pressable>

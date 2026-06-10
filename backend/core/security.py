@@ -20,12 +20,20 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def _issue_token(sub: str, kind: Literal["access", "refresh"], extra: dict | None = None) -> str:
+    import uuid as _uuid
+
     now = datetime.now(timezone.utc)
     if kind == "access":
         exp = now + timedelta(minutes=settings.JWT_ACCESS_TTL_MIN)
     else:
         exp = now + timedelta(days=settings.JWT_REFRESH_TTL_DAYS)
-    payload = {"sub": sub, "kind": kind, "iat": int(now.timestamp()), "exp": int(exp.timestamp())}
+    payload = {
+        "sub": sub,
+        "kind": kind,
+        "iat": int(now.timestamp()),
+        "exp": int(exp.timestamp()),
+        "jti": _uuid.uuid4().hex,
+    }
     if extra:
         payload.update(extra)
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALG)

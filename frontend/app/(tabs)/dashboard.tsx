@@ -19,7 +19,7 @@ import { colors, radius, spacing, typography } from "@/src/theme";
 
 const QUICK_ACTIONS = [
   { id: "new", label: "New Project", icon: "add-circle" as const, href: "/projects/new" },
-  { id: "upload", label: "Upload Video", icon: "cloud-upload" as const, href: "/assets" },
+  { id: "upload", label: "Upload Video", icon: "cloud-upload" as const, href: "/library" },
   { id: "reel", label: "Generate Reel", icon: "videocam" as const, href: "/projects/new" },
   { id: "thumb", label: "Generate Thumbnail", icon: "image" as const, href: "/projects/new" },
 ];

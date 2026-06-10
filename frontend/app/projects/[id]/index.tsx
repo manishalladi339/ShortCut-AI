@@ -136,7 +136,7 @@ export default function ProjectDetail() {
             label="Upload an asset"
             variant="ai"
             iconLeft={<Ionicons name="cloud-upload" size={18} color="#001318" />}
-            onPress={() => router.push({ pathname: "/assets", params: { project_id: project.id } })}
+            onPress={() => router.push({ pathname: "/library", params: { project_id: project.id } })}
             testID="project-upload-asset-button"
           />
           {project.creation_mode === "create_for_me" ? (

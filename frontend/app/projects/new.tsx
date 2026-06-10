@@ -65,10 +65,10 @@ export default function NewProject() {
         style={{ flex: 1 }}
       >
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} testID="newproject-back" style={styles.iconBtn}>
+          <Pressable onPress={() => router.back()} testID="new-project-back" style={styles.iconBtn}>
             <Ionicons name="close" color={colors.textHigh} size={24} />
           </Pressable>
-          <Text style={[typography.h3, { color: colors.textHigh }]} testID="newproject-title">
+          <Text style={[typography.h3, { color: colors.textHigh }]} testID="new-project-title">
             New Project
           </Text>
           <View style={{ width: 44 }} />
@@ -84,7 +84,7 @@ export default function NewProject() {
               label="Project title"
               value={title}
               onChangeText={setTitle}
-              testID="newproject-title-input"
+              testID="new-project-title-input"
               placeholder="e.g. Episode 12 — AI in 2026"
             />
           </View>
@@ -94,7 +94,7 @@ export default function NewProject() {
               items={CONTENT_TYPES.map((c) => ({ value: c.value, label: `${c.emoji} ${c.label}` }))}
               values={[contentType] as any}
               onToggle={(v) => setContentType(v as any)}
-              testIDPrefix="newproject-content-chip"
+              testIDPrefix="new-project-content-chip"
             />
           </Section>
 
@@ -107,7 +107,7 @@ export default function NewProject() {
                     key={m.value}
                     onPress={() => setMode(m.value)}
                     style={[styles.modeCard, active && styles.modeCardActive]}
-                    testID={`newproject-mode-${m.value}`}
+                    testID={`new-project-mode-${m.value}`}
                   >
                     <View style={styles.modeIcon(active)}>
                       <Ionicons
@@ -134,7 +134,7 @@ export default function NewProject() {
               items={STYLES.map((s) => ({ value: s.value, label: s.label }))}
               values={style ? [style] : []}
               onToggle={(v) => setStyle((cur) => (cur === v ? null : (v as StyleT)))}
-              testIDPrefix="newproject-style-chip"
+              testIDPrefix="new-project-style-chip"
             />
           </Section>
 
@@ -143,7 +143,7 @@ export default function NewProject() {
               items={PLATFORMS}
               values={platforms}
               onToggle={(v) => togglePlatform(v as TargetPlatform)}
-              testIDPrefix="newproject-platform-chip"
+              testIDPrefix="new-project-platform-chip"
             />
           </Section>
 
@@ -155,13 +155,13 @@ export default function NewProject() {
                 placeholder="e.g. Turn this into 20 YouTube Shorts focused on hooks"
                 multiline
                 style={{ minHeight: 100, paddingTop: 14 }}
-                testID="newproject-prompt-input"
+                testID="new-project-prompt-input"
               />
             </View>
           </Section>
 
           {err ? (
-            <Text style={[typography.caption, styles.errText]} testID="newproject-error">
+            <Text style={[typography.caption, styles.errText]} testID="new-project-error">
               {err}
             </Text>
           ) : null}
@@ -172,7 +172,7 @@ export default function NewProject() {
             label="Create project"
             onPress={create}
             loading={busy}
-            testID="newproject-submit-button"
+            testID="new-project-submit-button"
           />
         </View>
       </KeyboardAvoidingView>

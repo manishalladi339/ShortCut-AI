@@ -133,7 +133,7 @@ export default function SignIn() {
                 {err}
               </Text>
             ) : null}
-            <Button label="Sign in" onPress={submit} loading={busy} testID="auth-login-submit-button" />
+            <Button label="Sign in" onPress={submit} loading={busy} testID="auth-signin-submit-button" />
             <View style={styles.divider}>
               <View style={styles.line} />
               <Text style={[typography.caption, { color: colors.textLow, marginHorizontal: 12 }]}>
