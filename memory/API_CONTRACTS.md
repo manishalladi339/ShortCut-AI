@@ -40,21 +40,24 @@
 | GET | `/projects/continue-editing` | status in (draft, processing) limit 5 |
 
 ## Group 4 — Assets `/assets`
+> All asset binary lives in S3. Mobile clients PUT directly to S3 using a pre-signed URL; backend records metadata.
+
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/assets/upload` | multipart/form-data: `file`, optional `project_id`, `tags[]`. Returns asset. |
+| POST | `/assets/presign-upload` | `{filename, mime_type, kind, size_bytes, project_id?}` → `{asset_id, upload_url, upload_headers, s3_key, expires_at}` (signed PUT, 1h TTL) |
+| POST | `/assets/{id}/confirm` | Called after client PUT succeeds. Backend HEADs S3 to verify, sets `upload_status="uploaded"`, extracts duration/width/height via FFmpeg probe. |
 | GET | `/assets?kind=video&project_id=&tag=&q=&limit=20&cursor=` | Search + filter |
-| GET | `/assets/{id}` | Metadata only |
-| GET | `/assets/{id}/data` | Streams binary (Range header supported) |
+| GET | `/assets/{id}` | Metadata + fresh signed download URL (`s3_url`, 1h TTL) |
 | PATCH | `/assets/{id}` | `{tags?, filename?}` |
-| DELETE | `/assets/{id}` | |
+| DELETE | `/assets/{id}` | Also deletes the S3 object |
 
 ## Group 5 — AI Processing `/ai`
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/ai/projects/{id}/run-pipeline` | `{prompt?, target_platforms[], style?}` → 202 `{job_id}` |
+| POST | `/ai/projects/{id}/run-pipeline` | `{prompt?, target_platforms[], style?, target_language?="en"}` → 202 `{job_id}` |
 | GET | `/ai/jobs/{job_id}` | full job doc incl. step_results |
-| GET | `/ai/jobs/{job_id}/status` | lightweight `{status, current_step, progress}` |
+| GET | `/ai/jobs/{job_id}/status` | lightweight `{status, current_step, progress}` — polling fallback |
+| GET | `/ai/jobs/{job_id}/stream` | **SSE** stream (Content-Type: `text/event-stream`). Events: `progress`, `step_complete`, `done`, `error`. Auth via `?token=<jwt>` query (EventSource cannot set headers). |
 | POST | `/ai/jobs/{job_id}/cancel` | |
 | POST | `/ai/jobs/{job_id}/retry` | restarts from failed step |
 | POST | `/ai/commands` *(Create With Me)* | `{project_id, command: "remove pauses", params?}` → 202 `{job_id}` |
@@ -117,13 +120,15 @@
 | DELETE | `/calendar/{id}` | |
 | GET | `/calendar/suggestions` | AI-generated content plan |
 
-## Group 13 — Subscriptions `/subscriptions` *(post-MVP)*
+## Group 13 — Subscriptions `/subscriptions` *(architecture wired now, paid checkout disabled)*
+> Endpoints exist from MVP launch. Checkout/portal return `503 feature_disabled` until env flag `STRIPE_PAID_PLANS_ENABLED=true`.
+
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/subscriptions/me` | |
-| POST | `/subscriptions/checkout` | `{tier}` → Stripe Checkout URL |
-| POST | `/subscriptions/portal` | Stripe customer portal URL |
-| POST | `/webhooks/stripe` | Stripe webhook receiver |
+| GET | `/subscriptions/me` | Active tier + status (always works) |
+| POST | `/subscriptions/checkout` | `{tier}` → Stripe Checkout URL (**503 until enabled**) |
+| POST | `/subscriptions/portal` | Stripe customer portal URL (**503 until enabled**) |
+| POST | `/webhooks/stripe` | Stripe webhook receiver (wired, validates signature, idempotent) |
 
 ## Group 14 — Brand Kit `/brand` *(post-MVP)*
 | Method | Path | Notes |
@@ -194,3 +199,4 @@ class AIJobStatus(BaseModel):
 | `ai.job_failed` | 500 | |
 | `resource.not_found` | 404 | |
 | `rate_limit.exceeded` | 429 | |
+| `feature_disabled` | 503 | Paid Stripe checkout disabled until launch |

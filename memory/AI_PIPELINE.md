@@ -26,9 +26,9 @@ Each agent:
 
 ## Agent 1 — Transcription
 **Model:** OpenAI Whisper-1 (via Emergent LLM key)
-**Inputs:** `asset.data_b64` (audio extracted via FFmpeg if video) or audio asset.
-**FFmpeg pre-step:** `ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 audio.wav`
-**Prompt / params:** `response_format=verbose_json`, `timestamp_granularities=["word","segment"]`
+**Inputs:** S3 key of audio asset (audio extracted via FFmpeg if source is video; intermediate WAV temp file deleted after upload).
+**FFmpeg pre-step:** `ffmpeg -i s3-downloaded-input.mp4 -vn -ac 1 -ar 16000 audio.wav`
+**Prompt / params:** `response_format=verbose_json`, `timestamp_granularities=["word","segment"]`, `language="en"` (MVP).
 **Output schema:**
 ```json
 {
@@ -154,8 +154,16 @@ Each clip becomes a `clips` doc with `status=pending`. FFmpeg render kicked off 
 1. Gemini 3 Pro proposes 4 thumbnail concepts (description + text overlay) using `editing_planner.thumbnail_concept` as seed.
 2. For each concept, call Nano Banana with prompt:
    `"Photo-real YouTube thumbnail, 9:16 ratio, bold sans-serif text '<text>', dramatic lighting, viral aesthetic. Concept: <concept>."`
-3. Store base64 PNGs into `thumbnails`.
+3. Store base64 PNGs in S3 (`users/<uid>/thumbnails/<id>.png`); write `thumbnails` row with `s3_key` + `s3_url`.
 **Output:** 4 thumbnail docs per clip.
+
+---
+
+## Free-Tier Watermark (FFmpeg)
+- Applied **only when `user.subscription_tier == "free"`** during clip render in `services/media_service.py:apply_watermark()`.
+- Command (drawtext + semi-transparent logo bottom-right):
+  `ffmpeg -i clip.mp4 -i watermark.png -filter_complex "overlay=W-w-20:H-h-20:format=auto:alpha=0.55" -codec:a copy clip_watermarked.mp4`
+- Output stored alongside clean clip in S3 with `_watermarked` suffix; `clips.is_watermarked=true`.
 
 ---
 

@@ -66,10 +66,13 @@ backend/
 │   ├── auth_service.py
 │   ├── user_service.py
 │   ├── project_service.py
-│   ├── asset_service.py            # upload, gridfs/inline routing
-│   ├── media_service.py            # FFmpeg wrappers
+│   ├── asset_service.py            # presign upload/download, confirm
+│   ├── s3_service.py               # boto3 wrapper (presign, head, delete)
+│   ├── media_service.py            # FFmpeg wrappers + watermark burn-in
 │   ├── content_hub_service.py
 │   ├── quota_service.py            # subscription tier enforcement
+│   ├── stripe_service.py           # checkout/portal/webhook handling (paid flag-gated)
+│   ├── sse_service.py              # SSE event broker per job_id
 │   └── audit_service.py
 │
 ├── ai/
@@ -117,9 +120,12 @@ backend/
 │   ├── content.py
 │   ├── analytics.py                # post-MVP
 │   ├── calendar.py                 # post-MVP
-│   ├── subscriptions.py            # post-MVP
+│   ├── subscriptions.py            # wired now; paid endpoints flag-gated 503
 │   ├── brand.py                    # post-MVP
 │   └── system.py                   # /health, /api/docs
+│
+├── assets_static/
+│   └── watermark.png               # free-tier watermark overlay
 │
 └── tests/
     ├── conftest.py
@@ -160,7 +166,7 @@ frontend/
 │   │   ├── forgot-password.tsx
 │   │   └── reset-password.tsx
 │   ├── (tabs)/
-│   │   ├── _layout.tsx             # iOS NativeTabs / Android Tabs (max 4)
+│   │   ├── _layout.tsx             # iOS 26+ Liquid Glass NativeTabs / fallback Material on iOS<26 & Android
 │   │   ├── dashboard.tsx           # Tab 1
 │   │   ├── studio.tsx              # Tab 2 — list projects + new
 │   │   ├── hub.tsx                 # Tab 3 — Content Hub
@@ -210,13 +216,17 @@ frontend/
 │   ├── store/                      # Zustand
 │   │   ├── auth.ts
 │   │   ├── ui.ts
-│   │   └── pipeline.ts
+│   │   └── pipeline.ts             # SSE-driven progress state
 │   ├── hooks/
 │   │   ├── useAuth.ts
-│   │   ├── usePipelineStatus.ts    # polls /ai/jobs/{id}/status
+│   │   ├── usePipelineSSE.ts       # connects to /ai/jobs/{id}/stream
+│   │   ├── usePipelineStatus.ts    # polling fallback
 │   │   ├── useProjects.ts
 │   │   ├── useAssets.ts
-│   │   └── useUploader.ts
+│   │   └── useUploader.ts          # presign → direct PUT to S3 → confirm
+│   ├── i18n/
+│   │   ├── index.ts                # i18next setup
+│   │   └── en.json                 # English strings (only locale at MVP)
 │   ├── components/
 │   │   ├── ui/                     # design-system primitives
 │   │   │   ├── Button.tsx

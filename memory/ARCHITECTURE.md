@@ -90,10 +90,13 @@ GridFS for files > 16MB). Production migration path → AWS S3.
 - Wrapped by `services/media_service.py`.
 - Operations: clip cut by timestamps, aspect ratio reframe (9:16 / 1:1 / 16:9), silence removal, subtitle burn-in, audio normalize, thumbnail extract at timestamp.
 
-### 2.5 Storage
-- **MVP:** Base64 strings in Mongo (assets ≤ 8MB) or GridFS chunks for larger.
-- **Field:** `asset.data_b64` or `asset.gridfs_id`.
-- **Production:** `asset.s3_url` (signed URLs, 1-hour TTL).
+### 2.5 Storage (AWS S3 — day one)
+- All uploads, clips, thumbnails, and exports stored in **S3**.
+- Bucket layout: `s3://<bucket>/users/<user_id>/<resource>/<asset_id>.<ext>`
+- Upload flow: client requests `POST /assets/presign-upload` → backend returns signed PUT URL + asset shell row → client PUTs binary directly to S3 → client confirms via `POST /assets/{id}/confirm`.
+- Download flow: client calls `GET /assets/{id}` → backend returns signed GET URL (1h TTL).
+- Server-side ops (FFmpeg) stream S3 → temp disk → S3.
+- `asset.storage_type = "s3"`, `asset.s3_key`, `asset.s3_bucket`, `asset.s3_url` (signed, ephemeral).
 
 ## 3. Authentication Flow
 
@@ -132,8 +135,12 @@ POST /api/v1/auth/google { auth_code }
             ai_jobs.update(step_result=result)
         ai_jobs.update(status=completed, progress=100)
 
-[mobile] polls GET /ai/jobs/{job_id}/status every 2s
-         OR uses SSE stream GET /ai/jobs/{job_id}/stream (post-MVP)
+[mobile] SSE stream GET /api/v1/ai/jobs/{job_id}/stream
+         events: { event: "progress", data: {step, progress} }
+                 { event: "step_complete", data: {step, result_summary} }
+                 { event: "done", data: {job_id} }
+                 { event: "error", data: {step, message} }
+         Polling fallback: GET /ai/jobs/{job_id}/status every 2s
 ```
 
 ## 5. Security
@@ -153,7 +160,11 @@ POST /api/v1/auth/google { auth_code }
 | FFmpeg | (in-process) | bundled with backend |
 
 ## 7. Open Questions for Review
-1. GridFS vs S3 for MVP storage — confirm.
-2. SSE vs polling for job status — confirm.
-3. Watermark renderer location (FFmpeg burn-in on free plan) — confirm.
-4. Viral Score model — heuristic vs LLM-derived?
+*(All resolved — see PRD.md §10 for final decisions.)*
+1. ~~GridFS vs S3 for MVP storage~~ → **S3 from day one.**
+2. ~~SSE vs polling for job status~~ → **SSE primary, polling fallback.**
+3. ~~Watermark renderer location~~ → **FFmpeg burn-in on Free tier only.**
+4. ~~Viral Score model~~ → **Hybrid: heuristic formula seeded by LLM scores** (see AI_PIPELINE.md §3).
+5. ~~Stripe timing~~ → **Architecture now, paid plans flag-gated off.**
+6. ~~Liquid Glass~~ → **iOS 26+ Native Tabs, fallback elsewhere.**
+7. ~~Default language~~ → **English-only MVP, schema multilingual-ready.**

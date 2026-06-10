@@ -75,14 +75,17 @@ Indexes: `user_id`, `(user_id, archived, updated_at desc)`, `status`.
 | `size_bytes` | int | |
 | `duration_sec` | float? | video/audio |
 | `width`, `height` | int? | video/image |
-| `storage_type` | enum | `inline_b64` \| `gridfs` \| `s3` |
-| `data_b64` | str? | when inline |
-| `gridfs_id` | str? | when chunked |
-| `s3_url` | str? | when S3 |
+| `storage_type` | enum | `"s3"` (only value at MVP; reserved for future) |
+| `s3_bucket` | str | env-driven |
+| `s3_key` | str | `users/<user_id>/<kind>/<id>.<ext>` |
+| `s3_url` | str? | latest signed GET URL (ephemeral, NOT persisted long-term) |
+| `upload_status` | enum | `pending` \| `uploaded` \| `failed` |
+| `is_watermarked` | bool | true for free-tier exports |
+| `language` | str? | ISO 639, e.g., `"en"` — for transcribed/captioned media |
 | `tags` | str[] | |
 | `created_at`, `updated_at` | iso | |
 
-Indexes: `user_id`, `project_id`, `(user_id, kind)`, `tags`.
+Indexes: `user_id`, `project_id`, `(user_id, kind)`, `tags`, `s3_key` (unique).
 
 ## 5. `transcripts`
 | Field | Type | Notes |
@@ -168,8 +171,10 @@ Indexes: `project_id`, `(project_id, clip_score desc)`.
 | `project_id` | uuid | |
 | `concept` | str | textual concept |
 | `text_overlay` | str | |
-| `image_b64` | str | base64 PNG |
+| `s3_key` | str | thumbnail PNG in S3 |
+| `s3_url` | str? | signed GET URL (ephemeral) |
 | `model` | str | `gemini-nano-banana` |
+| `language` | str | `"en"` at MVP |
 | `created_at` | iso | |
 
 ## 12. `ai_jobs`
@@ -254,3 +259,19 @@ Indexes: `user_id`, `action`, `created_at desc`.
 
 ## Reference: Pydantic response strategy
 Every read endpoint returns a Pydantic model. Mongo queries always use `{"_id": 0}` projection so ObjectId never reaches JSON. Datetimes serialized as ISO-8601 with `Z`.
+
+## Reference: Multilingual Readiness
+- Every textual artifact (`transcripts`, `captions`, `titles`, `descriptions`, `hashtags`, `thumbnails`) carries a `language` field (default `"en"` at MVP).
+- AI agents accept a `target_language` param (default `"en"`).
+- UI strings extracted to `src/i18n/en.json` from day one to enable future locales without refactor.
+
+## Reference: S3 Bucket Convention
+```
+s3://<APP_S3_BUCKET>/
+  users/<user_id>/uploads/<asset_id>.<ext>
+  users/<user_id>/clips/<clip_id>.mp4
+  users/<user_id>/clips/<clip_id>_watermarked.mp4
+  users/<user_id>/thumbnails/<thumbnail_id>.png
+  users/<user_id>/exports/<export_id>.mp4
+```
+Signed URL TTL: 3600s (1 hour). Re-issued on every read endpoint.
