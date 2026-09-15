@@ -1,4 +1,4 @@
-"""Schemas for time-aligned media intelligence."""
+"""Schemas for time-aligned multimodal media intelligence."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -27,6 +27,19 @@ class SceneBoundary(BaseModel):
     score: float | None = None
 
 
+class VisualObservation(BaseModel):
+    index: int = Field(ge=0)
+    time: float = Field(ge=0)
+    description: str = ""
+    shot_type: str = "unknown"
+    people_count: int = Field(default=0, ge=0)
+    visible_objects: list[str] = Field(default_factory=list)
+    text_on_screen: str | None = None
+    editing_notes: list[str] = Field(default_factory=list)
+    provider: str | None = None
+    model: str | None = None
+
+
 class MediaIntelligenceOut(BaseModel):
     id: str
     asset_id: str
@@ -37,7 +50,10 @@ class MediaIntelligenceOut(BaseModel):
     transcript_text: str = ""
     words: list[TranscriptWord] = Field(default_factory=list)
     segments: list[TranscriptSegment] = Field(default_factory=list)
+    speakers: list[str] = Field(default_factory=list)
+    diarized: bool = False
     scenes: list[SceneBoundary] = Field(default_factory=list)
+    visual_observations: list[VisualObservation] = Field(default_factory=list)
     semantic_units: list[dict[str, Any]] = Field(default_factory=list)
     provider: str | None = None
     model: str | None = None

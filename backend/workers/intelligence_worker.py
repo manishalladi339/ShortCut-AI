@@ -14,10 +14,12 @@ from models.job import JobType
 from services import job_service
 from services.audio_extract import extract_mono_16k
 from services.embeddings import get_embedding_provider
+from services.frame_sampler import extract_frames
 from services.scene_detection import detect_scenes
 from services.semantic_units import build_semantic_units
 from services.storage import materialize
 from services.transcription import get_transcription_provider
+from services.vision import get_vision_provider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("shortcut.intelligence-worker")
@@ -94,13 +96,24 @@ async def process_one() -> bool:
                 transcript = await get_transcription_provider().transcribe(audio)
 
                 scenes = []
+                visual_observations = []
                 if asset["kind"] == "video":
-                    await job_service.set_progress(job["id"], 65)
+                    await job_service.set_progress(job["id"], 55)
                     scenes = detect_scenes(source, asset.get("duration_sec"))
+                    await job_service.set_progress(job["id"], 65)
+                    frames = extract_frames(
+                        source,
+                        root / "frames",
+                        scenes=scenes,
+                        duration_sec=asset.get("duration_sec"),
+                        max_frames=settings.MAX_VISION_FRAMES,
+                    )
+                    if frames:
+                        visual_observations = await get_vision_provider().analyze_frames(frames)
 
         words = _normalize_words(transcript.get("words") or [])
         segments = _normalize_segments(transcript.get("segments") or [])
-        semantic_units = build_semantic_units(segments=segments, scenes=scenes)
+        semantic_units = build_semantic_units(segments=segments, scenes=scenes, split_on_speaker=True)
         await job_service.set_progress(job["id"], 80)
         semantic_vectors: list[list[float]] = []
         if semantic_units:
@@ -113,7 +126,10 @@ async def process_one() -> bool:
             "transcript_text": str(transcript.get("text") or "").strip(),
             "words": words,
             "segments": segments,
+            "speakers": transcript.get("speakers") or [],
+            "diarized": bool(transcript.get("diarized")),
             "scenes": scenes,
+            "visual_observations": visual_observations,
             "semantic_units": semantic_units,
             "semantic_vectors": semantic_vectors,
             "embedding_model": settings.EMBEDDING_MODEL,
@@ -143,6 +159,8 @@ async def process_one() -> bool:
                 "word_count": len(words),
                 "segment_count": len(segments),
                 "scene_count": len(scenes),
+                "speaker_count": len(transcript.get("speakers") or []),
+                "visual_observation_count": len(visual_observations),
                 "semantic_unit_count": len(semantic_units),
                 "embedded_unit_count": len(semantic_vectors),
             },
