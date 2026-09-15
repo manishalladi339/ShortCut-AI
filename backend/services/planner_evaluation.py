@@ -19,6 +19,8 @@ def evaluate_plan(plan: dict) -> dict:
 
     grounded = True
     for operation in operations:
+        if operation.get("operation") != "add_clip":
+            continue
         payload = operation.get("payload") or {}
         metadata = payload.get("metadata") or {}
         key = (
