@@ -24,6 +24,7 @@ from services.highlight_scoring import (
 )
 from services.narrative_planning import structure_narrative
 from services.planner_evaluation import evaluate_plan
+from services.rhythm_editing import map_rhythm_to_timeline, snap_forward_to_rhythm
 from services.semantic_search import cosine_similarity
 from services.silence_editing import snap_outward_to_silence
 from services.speaker_editing import (
@@ -375,24 +376,77 @@ async def build_plan(
             6,
         )
 
+        beat_grid = record.get("beat_grid") or None
+        timing_signal = "energy_onset"
+        timing_events = record.get("rhythm_events") or []
+        if beat_grid and beat_grid.get("beats"):
+            timing_signal = "beat_grid"
+            timing_events = [
+                {
+                    "time": beat,
+                    "strength": float(beat_grid.get("confidence") or 0.0),
+                }
+                for beat in beat_grid["beats"]
+            ]
+
+        mapped_rhythm = map_rhythm_to_timeline(
+            source_segments=source_segments,
+            rhythm_events=timing_events,
+            timeline_start=candidate_timeline_start,
+            ticks_per_second=ticks_per_second,
+        )
+        broll_timeline_start = candidate_timeline_start
+        rhythm_event = None
+        if body.rhythm_snap_broll:
+            broll_timeline_start, rhythm_event = snap_forward_to_rhythm(
+                desired_tick=candidate_timeline_start,
+                rhythm_events=mapped_rhythm,
+                max_delay_ticks=round(
+                    body.rhythm_snap_window_sec * ticks_per_second
+                ),
+                min_strength=0.05,
+            )
+            if rhythm_event:
+                rhythm_event = {
+                    **rhythm_event,
+                    "signal": timing_signal,
+                    "bpm": (
+                        beat_grid.get("bpm")
+                        if timing_signal == "beat_grid"
+                        else None
+                    ),
+                    "confidence": (
+                        beat_grid.get("confidence")
+                        if timing_signal == "beat_grid"
+                        else rhythm_event.get("strength")
+                    ),
+                }
+
         broll = recommend_broll_for_highlight(
             highlight=candidate,
             visual_candidates=visual_candidates,
             highlight_vector=semantic_vector,
             limit=3,
         )
+        broll_available_duration = max(
+            0,
+            candidate_timeline_start
+            + candidate_duration
+            - broll_timeline_start,
+        )
         if broll:
             broll_recommendations.append(
                 {
                     "for_asset_id": candidate["asset_id"],
                     "for_unit_index": candidate["unit_index"],
-                    "timeline_start": candidate_timeline_start,
-                    "duration": candidate_duration,
+                    "timeline_start": broll_timeline_start,
+                    "duration": max(1, broll_available_duration),
                     "candidates": broll,
+                    "rhythm_event": rhythm_event,
                 }
             )
 
-        if overlay_track and broll:
+        if overlay_track and broll and broll_available_duration > 0:
             best = broll[0]
             broll_asset = assets.get(best["asset_id"])
             source_range = bounded_broll_source_range(
@@ -401,7 +455,7 @@ async def build_plan(
                     (broll_asset or {}).get("duration_sec") or 0.0
                 ),
                 target_duration_ticks=min(
-                    candidate_duration,
+                    broll_available_duration,
                     max(1, round(3.0 * ticks_per_second)),
                 ),
                 ticks_per_second=ticks_per_second,
@@ -415,7 +469,7 @@ async def build_plan(
                             "sequence_id": sequence["id"],
                             "track_id": overlay_track["id"],
                             "asset_id": best["asset_id"],
-                            "timeline_start": candidate_timeline_start,
+                            "timeline_start": broll_timeline_start,
                             "duration": broll_duration,
                             "source_start": broll_source_start,
                             "source_duration": broll_duration,
@@ -433,6 +487,32 @@ async def build_plan(
                                     "relevance_score"
                                 ],
                                 "replaces_primary_visual": True,
+                                "rhythm_snapped": rhythm_event is not None,
+                                "rhythm_source_time": (
+                                    rhythm_event.get("source_time")
+                                    if rhythm_event
+                                    else None
+                                ),
+                                "rhythm_strength": (
+                                    rhythm_event.get("strength")
+                                    if rhythm_event
+                                    else None
+                                ),
+                                "rhythm_signal": (
+                                    rhythm_event.get("signal")
+                                    if rhythm_event
+                                    else None
+                                ),
+                                "rhythm_bpm": (
+                                    rhythm_event.get("bpm")
+                                    if rhythm_event
+                                    else None
+                                ),
+                                "rhythm_confidence": (
+                                    rhythm_event.get("confidence")
+                                    if rhythm_event
+                                    else None
+                                ),
                             },
                         },
                         "reason": (
@@ -440,6 +520,12 @@ async def build_plan(
                             f"{best['time']:.3f}s matched this spoken "
                             f"highlight with similarity "
                             f"{best['relevance_score']:.3f}"
+                            + (
+                                " and its entrance was snapped to a "
+                                "nearby measured audio onset"
+                                if rhythm_event
+                                else ""
+                            )
                         ),
                     }
                 )

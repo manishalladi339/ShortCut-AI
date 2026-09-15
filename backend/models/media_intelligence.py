@@ -33,6 +33,21 @@ class SilenceInterval(BaseModel):
     duration: float = Field(ge=0)
 
 
+class RhythmEvent(BaseModel):
+    time: float = Field(ge=0)
+    strength: float = Field(ge=0, le=1)
+    energy: float = Field(ge=0)
+    energy_ratio: float = Field(ge=0)
+
+
+class BeatGrid(BaseModel):
+    bpm: float = Field(gt=0)
+    period_sec: float = Field(gt=0)
+    confidence: float = Field(ge=0, le=1)
+    beats: list[float] = Field(default_factory=list)
+    source: str = "energy_onsets"
+
+
 class VisualObservation(BaseModel):
     index: int = Field(ge=0)
     time: float = Field(ge=0)
@@ -60,6 +75,8 @@ class MediaIntelligenceOut(BaseModel):
     diarized: bool = False
     scenes: list[SceneBoundary] = Field(default_factory=list)
     silences: list[SilenceInterval] = Field(default_factory=list)
+    rhythm_events: list[RhythmEvent] = Field(default_factory=list)
+    beat_grid: BeatGrid | None = None
     visual_observations: list[VisualObservation] = Field(default_factory=list)
     semantic_units: list[dict[str, Any]] = Field(default_factory=list)
     provider: str | None = None

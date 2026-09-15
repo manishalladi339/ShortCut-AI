@@ -31,6 +31,7 @@ class BrollRecommendation(BaseModel):
     timeline_start: int = Field(ge=0)
     duration: int = Field(gt=0)
     candidates: list[dict[str, Any]] = Field(default_factory=list)
+    rhythm_event: dict[str, Any] | None = None
 
 
 class ProposedEditOperation(BaseModel):
@@ -81,3 +82,5 @@ class CreateAIEditPlanRequest(BaseModel):
     max_same_speaker_run: int = Field(default=2, ge=1, le=5)
     remove_dead_air: bool = True
     dead_air_min_sec: float = Field(default=0.9, ge=0.5, le=5.0)
+    rhythm_snap_broll: bool = True
+    rhythm_snap_window_sec: float = Field(default=0.35, ge=0.0, le=1.0)
