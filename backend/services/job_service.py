@@ -1,12 +1,8 @@
-"""Mongo-backed job queue primitives.
-
-This intentionally keeps queue semantics explicit and testable. A worker claims
-jobs atomically with find_one_and_update. The implementation can later be
-replaced by Redis/Celery without changing the HTTP API.
-"""
+"""Mongo-backed job queue primitives."""
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from pymongo import ReturnDocument
 
@@ -21,6 +17,7 @@ async def enqueue(
     job_type: JobType,
     project_id: str | None = None,
     asset_id: str | None = None,
+    payload: dict[str, Any] | None = None,
     max_attempts: int = 3,
 ) -> dict:
     now = utc_now()
@@ -34,6 +31,7 @@ async def enqueue(
         "progress": 0,
         "attempt": 0,
         "max_attempts": max_attempts,
+        "payload": payload or {},
         "error_code": None,
         "error_message": None,
         "result": {},
@@ -104,7 +102,7 @@ async def fail(job: dict, *, code: str, message: str) -> None:
                 "status": JobStatus.queued.value if retryable else JobStatus.failed.value,
                 "progress": 0 if retryable else job.get("progress", 0),
                 "error_code": code,
-                "error_message": message[:2000],
+                "error_message": message[:4000],
                 "finished_at": None if retryable else now,
                 "updated_at": now,
             }
