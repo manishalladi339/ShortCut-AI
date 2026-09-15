@@ -57,7 +57,7 @@ async def compile_render_plan(
 
     render_clips: list[RenderClip] = []
     duration_ticks = 0
-    for track in sequence["tracks"]:
+    for track_index, track in enumerate(sequence["tracks"]):
         if track.get("muted"):
             continue
         for clip in track["clips"]:
@@ -84,6 +84,7 @@ async def compile_render_plan(
                 clip_id=clip["id"],
                 track_id=track["id"],
                 track_kind=track["kind"],
+                track_index=track_index,
                 asset_id=clip["asset_id"],
                 source_storage_key=asset["storage_key"],
                 timeline_start=clip["timeline_start"],
@@ -97,7 +98,7 @@ async def compile_render_plan(
             render_clips.append(render_clip)
             duration_ticks = max(duration_ticks, clip["timeline_start"] + clip["duration"])
 
-    render_clips.sort(key=lambda c: (c.timeline_start, c.track_id, c.clip_id))
+    render_clips.sort(key=lambda c: (c.track_index, c.timeline_start, c.clip_id))
     render_captions = [
         RenderCaption(**cue)
         for cue in sorted(sequence.get("captions", []), key=lambda item: item["start"])
