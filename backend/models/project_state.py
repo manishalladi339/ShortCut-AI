@@ -21,6 +21,15 @@ class Timebase(BaseModel):
     denominator: int = Field(default=1, gt=0)
 
 
+class TransitionKind(str, Enum):
+    fade = "fade"
+
+
+class ClipTransition(BaseModel):
+    kind: TransitionKind = TransitionKind.fade
+    duration: int = Field(gt=0)
+
+
 class ClipTransform(BaseModel):
     scale: float = Field(default=1.0, gt=0.01, le=10.0)
     position_x: float = 0.0
@@ -48,7 +57,16 @@ class Clip(BaseModel):
     volume: float = Field(default=1.0, ge=0.0, le=4.0)
     playback_rate: float = Field(default=1.0, gt=0.05, le=8.0)
     transform: ClipTransform = Field(default_factory=ClipTransform)
+    transition_in: ClipTransition | None = None
+    transition_out: ClipTransition | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def transitions_fit_clip(self) -> "Clip":
+        for transition in (self.transition_in, self.transition_out):
+            if transition and transition.duration > self.duration:
+                raise ValueError("transition duration cannot exceed clip duration")
+        return self
 
 
 class Track(BaseModel):

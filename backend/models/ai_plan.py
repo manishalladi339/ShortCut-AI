@@ -84,3 +84,5 @@ class CreateAIEditPlanRequest(BaseModel):
     dead_air_min_sec: float = Field(default=0.9, ge=0.5, le=5.0)
     rhythm_snap_broll: bool = True
     rhythm_snap_window_sec: float = Field(default=0.35, ge=0.0, le=1.0)
+    broll_fade: bool = True
+    broll_fade_sec: float = Field(default=0.18, ge=0.05, le=1.0)

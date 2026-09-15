@@ -22,6 +22,7 @@ def test_state_initializes_for_owned_project(api_url, session, fresh_user):
     assert state["active_sequence_id"] == state["sequences"][0]["id"]
     assert {track["kind"] for track in state["sequences"][0]["tracks"]} == {
         "video",
+        "overlay",
         "audio",
         "caption",
     }

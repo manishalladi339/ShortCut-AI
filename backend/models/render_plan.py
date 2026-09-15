@@ -14,6 +14,11 @@ class RenderCaption(BaseModel):
     style: dict[str, Any] = Field(default_factory=dict)
 
 
+class RenderTransition(BaseModel):
+    kind: str
+    duration: int = Field(gt=0)
+
+
 class RenderClip(BaseModel):
     clip_id: str
     track_id: str
@@ -27,6 +32,8 @@ class RenderClip(BaseModel):
     source_duration: int = Field(gt=0)
     playback_rate: float = Field(gt=0)
     volume: float = Field(ge=0)
+    transition_in: RenderTransition | None = None
+    transition_out: RenderTransition | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -14,6 +14,7 @@ from models.project_state import (
     CaptionCue,
     Clip,
     ClipTransform,
+    ClipTransition,
     EditOperation,
     ProjectStateDocument,
     ProjectStateOut,
@@ -69,6 +70,7 @@ def _new_state(project_id: str, user_id: str) -> dict:
         name="Main",
         tracks=[
             Track(id=str(uuid.uuid4()), kind=TrackKind.video, name="Video 1"),
+            Track(id=str(uuid.uuid4()), kind=TrackKind.overlay, name="Overlays"),
             Track(id=str(uuid.uuid4()), kind=TrackKind.audio, name="Audio 1"),
             Track(id=str(uuid.uuid4()), kind=TrackKind.caption, name="Captions"),
         ],
@@ -233,6 +235,16 @@ def _apply_operation(state: dict, edit: EditOperation) -> dict:
                 volume=float(p.get("volume", 1.0)),
                 playback_rate=float(p.get("playback_rate", 1.0)),
                 transform=ClipTransform(**p.get("transform", {})),
+                transition_in=(
+                    ClipTransition(**p["transition_in"])
+                    if p.get("transition_in")
+                    else None
+                ),
+                transition_out=(
+                    ClipTransition(**p["transition_out"])
+                    if p.get("transition_out")
+                    else None
+                ),
                 metadata=p.get("metadata", {}),
             )
         except (KeyError, TypeError, ValueError, ValidationError) as exc:
@@ -287,14 +299,20 @@ def _apply_operation(state: dict, edit: EditOperation) -> dict:
             left_source_duration = clip["source_duration"] - 1
         right_source_duration = clip["source_duration"] - left_source_duration
 
+        original_transition_out = copy.deepcopy(
+            clip.get("transition_out")
+        )
         clip["duration"] = left_duration
         clip["source_duration"] = left_source_duration
+        clip["transition_out"] = None
         right = copy.deepcopy(clip)
         right["id"] = str(p.get("new_clip_id") or uuid.uuid4())
         right["timeline_start"] = split_at
         right["duration"] = right_duration
         right["source_start"] = clip["source_start"] + left_source_duration
         right["source_duration"] = right_source_duration
+        right["transition_in"] = None
+        right["transition_out"] = original_transition_out
         track["clips"].append(right)
 
     elif op in {"move_clip", "trim_clip", "set_clip_properties"}:
@@ -321,6 +339,14 @@ def _apply_operation(state: dict, edit: EditOperation) -> dict:
             if "transform" in p:
                 merged = {**clip.get("transform", {}), **p["transform"]}
                 clip["transform"] = ClipTransform(**merged).model_dump(mode="json")
+            for field in ("transition_in", "transition_out"):
+                if field in p:
+                    value = p[field]
+                    clip[field] = (
+                        ClipTransition(**value).model_dump(mode="json")
+                        if value
+                        else None
+                    )
             if "metadata" in p:
                 clip["metadata"] = {**clip.get("metadata", {}), **p["metadata"]}
 
