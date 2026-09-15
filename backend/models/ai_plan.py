@@ -61,3 +61,4 @@ class CreateAIEditPlanRequest(BaseModel):
     max_clips: int = Field(default=8, ge=1, le=30)
     min_clip_sec: float = Field(default=2.0, ge=0.5, le=30.0)
     max_clip_sec: float = Field(default=20.0, ge=1.0, le=60.0)
+    include_captions: bool = True
