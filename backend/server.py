@@ -15,6 +15,7 @@ from routers.jobs import router as jobs_router
 from routers.intelligence import router as intelligence_router
 from routers.project_state import router as project_state_router
 from routers.render import router as render_router
+from routers.retrieval import router as retrieval_router
 from routers.projects import router as projects_router
 from routers.users import router as users_router
 
@@ -52,6 +53,7 @@ api_v1.include_router(project_state_router)
 api_v1.include_router(render_router)
 api_v1.include_router(assets_router)
 api_v1.include_router(intelligence_router)
+api_v1.include_router(retrieval_router)
 api_v1.include_router(jobs_router)
 api_v1.include_router(local_storage_router)
 
