@@ -27,6 +27,12 @@ class SceneBoundary(BaseModel):
     score: float | None = None
 
 
+class SilenceInterval(BaseModel):
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    duration: float = Field(ge=0)
+
+
 class VisualObservation(BaseModel):
     index: int = Field(ge=0)
     time: float = Field(ge=0)
@@ -53,6 +59,7 @@ class MediaIntelligenceOut(BaseModel):
     speakers: list[str] = Field(default_factory=list)
     diarized: bool = False
     scenes: list[SceneBoundary] = Field(default_factory=list)
+    silences: list[SilenceInterval] = Field(default_factory=list)
     visual_observations: list[VisualObservation] = Field(default_factory=list)
     semantic_units: list[dict[str, Any]] = Field(default_factory=list)
     provider: str | None = None
