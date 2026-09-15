@@ -1,4 +1,5 @@
 """Tests for deterministic B-roll transition planning."""
+from models.ai_plan import CreateAIEditPlanRequest
 from services.transition_planning import broll_fade_ticks
 
 
@@ -50,3 +51,9 @@ def test_low_confidence_beat_grid_does_not_control_fade():
     )
     assert ticks == 300
     assert meta["strategy"] == "requested"
+
+
+def test_create_plan_exposes_safe_broll_fade_defaults():
+    body = CreateAIEditPlanRequest()
+    assert body.broll_fade is True
+    assert body.broll_fade_sec == 0.18
