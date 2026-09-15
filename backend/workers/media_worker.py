@@ -25,42 +25,69 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("shortcut.media-worker")
 
 
+async def _sync_asset_failure(job: dict, final: bool) -> None:
+    await get_db().assets.update_one(
+        {"id": job.get("asset_id")},
+        {
+            "$set": {
+                "processing_status": "failed" if final else "queued",
+                "updated_at": utc_now(),
+            }
+        },
+    )
+
+
 async def process_one() -> bool:
     job = await job_service.claim_next(JobType.media_probe)
     if not job:
         return False
 
+    db = get_db()
     try:
-        db = get_db()
         asset = await db.assets.find_one({"id": job["asset_id"]}, {"_id": 0})
         if not asset:
             raise RuntimeError("asset no longer exists")
 
+        await db.assets.update_one(
+            {"id": asset["id"]},
+            {"$set": {"processing_status": "processing", "updated_at": utc_now()}},
+        )
         await job_service.set_progress(job["id"], 20)
+
         suffix = Path(asset["filename"]).suffix
         with materialize(asset["storage_key"], suffix=suffix) as local_path:
             metadata = probe(local_path)
 
         await job_service.set_progress(job["id"], 80)
-        update = {
-            "processing_status": "ready",
-            "processing_job_id": job["id"],
-            "media_metadata": metadata,
-            "duration_sec": metadata.get("duration_sec"),
-            "width": metadata.get("width"),
-            "height": metadata.get("height"),
-            "updated_at": utc_now(),
-        }
-        await db.assets.update_one({"id": asset["id"]}, {"$set": update})
+        await db.assets.update_one(
+            {"id": asset["id"]},
+            {
+                "$set": {
+                    "processing_status": "ready",
+                    "processing_job_id": job["id"],
+                    "media_metadata": metadata,
+                    "duration_sec": metadata.get("duration_sec"),
+                    "width": metadata.get("width"),
+                    "height": metadata.get("height"),
+                    "updated_at": utc_now(),
+                }
+            },
+        )
         await job_service.succeed(job["id"], metadata)
         logger.info("processed asset %s", asset["id"])
         return True
+
     except MediaProbeError as exc:
+        final = job["attempt"] >= job["max_attempts"]
         await job_service.fail(job, code="media.probe_failed", message=str(exc))
+        await _sync_asset_failure(job, final)
         logger.warning("media probe failed for job %s: %s", job["id"], exc)
         return True
+
     except Exception as exc:
+        final = job["attempt"] >= job["max_attempts"]
         await job_service.fail(job, code="media.processing_failed", message=str(exc))
+        await _sync_asset_failure(job, final)
         logger.exception("media processing failed for job %s", job["id"])
         return True
 
