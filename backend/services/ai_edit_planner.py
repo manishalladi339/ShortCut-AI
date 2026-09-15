@@ -24,6 +24,7 @@ from services.highlight_scoring import (
 )
 from services.narrative_planning import structure_narrative
 from services.planner_evaluation import evaluate_plan
+from services.plan_review import assign_operation_ids
 from services.rhythm_editing import map_rhythm_to_timeline, snap_forward_to_rhythm
 from services.semantic_search import cosine_similarity
 from services.silence_editing import snap_outward_to_silence
@@ -583,6 +584,7 @@ async def build_plan(
                 }
             )
 
+    assign_operation_ids(operations)
     now = utc_now()
     plan = {
         "id": str(uuid.uuid4()),

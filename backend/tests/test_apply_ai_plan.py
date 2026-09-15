@@ -10,3 +10,16 @@ def test_apply_plan_defaults_to_non_destructive_behavior():
     body = ApplyAIEditPlanRequest(expected_version=3)
     assert body.expected_version == 3
     assert body.replace_existing_video_clips is False
+    assert body.operation_ids is None
+
+
+def test_apply_plan_accepts_reviewed_operation_ids():
+    body = ApplyAIEditPlanRequest(
+        expected_version=4,
+        operation_ids=["primary-1", "primary-2", "caption-1"],
+    )
+    assert body.operation_ids == [
+        "primary-1",
+        "primary-2",
+        "caption-1",
+    ]

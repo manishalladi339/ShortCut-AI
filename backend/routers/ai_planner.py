@@ -116,5 +116,6 @@ async def apply_ai_edit_plan(
         user_id=user["id"],
         expected_version=body.expected_version,
         replace_existing_video_clips=body.replace_existing_video_clips,
+        operation_ids=body.operation_ids,
     )
     return ProjectStateOut(**state)
