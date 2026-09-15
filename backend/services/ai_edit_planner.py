@@ -91,9 +91,50 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
         operations.append({"operation": "add_clip", "payload": {"sequence_id": sequence["id"], "track_id": video_track["id"], "asset_id": candidate["asset_id"], "timeline_start": timeline_cursor, "duration": duration, "source_start": source_start, "source_duration": duration, "metadata": {"ai_plan": True, "source_intelligence_id": candidate["intelligence_id"], "source_unit_index": candidate["unit_index"], "highlight_score": candidate["final_score"], "narrative_role": role, "visual_context": candidate.get("visual_context")}}, "reason": f"{role.title()} clip selected from grounded multimodal evidence with score {candidate['final_score']:.3f}: {candidate['text'][:180]}"})
         if overlay_track and broll:
             best = broll[0]
-            broll_duration = min(duration, max(1, round(3.0 * ticks_per_second)))
-            broll_source_start = max(0, round(float(best["time"]) * ticks_per_second) - broll_duration // 2)
-            operations.append({"operation": "add_broll_overlay", "payload": {"sequence_id": sequence["id"], "track_id": overlay_track["id"], "asset_id": best["asset_id"], "timeline_start": timeline_cursor, "duration": broll_duration, "source_start": broll_source_start, "source_duration": broll_duration, "volume": 0.0, "metadata": {"ai_plan": True, "broll": True, "source_intelligence_id": best["intelligence_id"], "source_observation_index": best["observation_index"], "broll_relevance_score": best["relevance_score"], "replaces_primary_visual": True}}, "reason": f"Grounded B-roll from {best['asset_id']} at {best['time']:.3f}s matched this spoken highlight with similarity {best['relevance_score']:.3f}"})
+            broll_asset = assets.get(best["asset_id"])
+            source_duration_sec = float((broll_asset or {}).get("duration_sec") or 0.0)
+            source_duration_ticks = round(source_duration_sec * ticks_per_second)
+            requested_broll_duration = min(
+                duration, max(1, round(3.0 * ticks_per_second))
+            )
+            if source_duration_ticks > 0:
+                broll_duration = min(requested_broll_duration, source_duration_ticks)
+                centered_start = (
+                    round(float(best["time"]) * ticks_per_second)
+                    - broll_duration // 2
+                )
+                broll_source_start = min(
+                    max(0, centered_start),
+                    max(0, source_duration_ticks - broll_duration),
+                )
+                operations.append(
+                    {
+                        "operation": "add_broll_overlay",
+                        "payload": {
+                            "sequence_id": sequence["id"],
+                            "track_id": overlay_track["id"],
+                            "asset_id": best["asset_id"],
+                            "timeline_start": timeline_cursor,
+                            "duration": broll_duration,
+                            "source_start": broll_source_start,
+                            "source_duration": broll_duration,
+                            "volume": 0.0,
+                            "metadata": {
+                                "ai_plan": True,
+                                "broll": True,
+                                "source_intelligence_id": best["intelligence_id"],
+                                "source_observation_index": best["observation_index"],
+                                "broll_relevance_score": best["relevance_score"],
+                                "replaces_primary_visual": True,
+                            },
+                        },
+                        "reason": (
+                            f"Grounded B-roll from {best['asset_id']} at "
+                            f"{best['time']:.3f}s matched this spoken highlight "
+                            f"with similarity {best['relevance_score']:.3f}"
+                        ),
+                    }
+                )
         if body.include_captions:
             caption_text = candidate["text"].strip()[:500]
             operations.append({"operation": "add_caption", "payload": {"sequence_id": sequence["id"], "start": timeline_cursor, "duration": duration, "text": caption_text, "style": {"source": "transcript", "narrative_role": role}}, "reason": "Grounded caption copied from the selected transcript unit"})
