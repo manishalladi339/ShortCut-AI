@@ -11,13 +11,14 @@ from db.mongo import close as close_mongo
 from routers.assets import router as assets_router
 from routers.assets import stub_router as assets_stub_router
 from routers.auth import router as auth_router
+from routers.project_state import router as project_state_router
 from routers.projects import router as projects_router
 from routers.users import router as users_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("shortcut")
 
-app = FastAPI(title="ShortCut AI", version="0.1.0")
+app = FastAPI(title="ShortCut AI", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,7 +29,6 @@ app.add_middleware(
 )
 
 
-# Global error handler so all errors share the same envelope.
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_request: Request, exc: HTTPException):
     detail = exc.detail
@@ -45,13 +45,14 @@ api_v1 = APIRouter(prefix="/api/v1")
 api_v1.include_router(auth_router)
 api_v1.include_router(users_router)
 api_v1.include_router(projects_router)
+api_v1.include_router(project_state_router)
 api_v1.include_router(assets_router)
 api_v1.include_router(assets_stub_router)
 
 
 @api.get("/")
 async def root():
-    return {"name": "ShortCut AI", "version": "0.1.0", "docs": "/api/docs"}
+    return {"name": "ShortCut AI", "version": "0.2.0", "docs": "/docs"}
 
 
 @api.get("/health")
