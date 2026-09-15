@@ -22,5 +22,6 @@ class ExportOut(BaseModel):
     storage_key: str | None = None
     download_url: str | None = None
     duration_sec: float | None = None
+    render_metadata: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
