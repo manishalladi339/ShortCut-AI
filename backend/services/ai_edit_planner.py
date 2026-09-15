@@ -15,7 +15,13 @@ from services.highlight_scoring import (
     heuristic_highlight_score,
     select_non_overlapping,
 )
+from services.narrative_planning import structure_narrative
+from services.planner_evaluation import evaluate_plan
 from services.semantic_search import cosine_similarity
+
+
+def _candidate_key(item: dict) -> str:
+    return f"{item['asset_id']}:{item['unit_index']}"
 
 
 async def build_plan(
@@ -42,7 +48,10 @@ async def build_plan(
             detail={
                 "error": {
                     "code": "planner.no_intelligence",
-                    "message": "Analyze at least one project media asset before creating an AI edit plan",
+                    "message": (
+                        "Analyze at least one project media asset before "
+                        "creating an AI edit plan"
+                    ),
                 }
             },
         )
@@ -91,6 +100,7 @@ async def build_plan(
                     "relevance_score": relevance,
                     "final_score": final,
                     "reasons": reasons + ["semantic relevance to objective"],
+                    "narrative_role": None,
                 }
             )
 
@@ -107,13 +117,46 @@ async def build_plan(
             detail={
                 "error": {
                     "code": "planner.no_viable_highlights",
-                    "message": "No analyzed transcript units met the requested clip constraints",
+                    "message": (
+                        "No analyzed transcript units met the requested clip constraints"
+                    ),
                 }
             },
         )
 
+    narrative = await structure_narrative(
+        objective=objective,
+        project=project,
+        candidates=chosen,
+        target_audience=body.target_audience,
+    )
+    chosen_by_key = {_candidate_key(item): item for item in chosen}
+    ordered: list[dict] = []
+    for key in narrative.get("ordered_keys") or []:
+        candidate = chosen_by_key.get(key)
+        if candidate is None:
+            continue
+        candidate["narrative_role"] = (narrative.get("roles") or {}).get(key, "body")
+        ordered.append(candidate)
+
+    # Defensive completion: provider output cannot cause grounded candidates to vanish.
+    seen_keys = {_candidate_key(item) for item in ordered}
+    for candidate in sorted(
+        chosen,
+        key=lambda item: (item["asset_id"], item["start"]),
+    ):
+        key = _candidate_key(candidate)
+        if key in seen_keys:
+            continue
+        candidate["narrative_role"] = (narrative.get("roles") or {}).get(key, "body")
+        ordered.append(candidate)
+
     sequence = next(
-        (seq for seq in state["sequences"] if seq["id"] == state["active_sequence_id"]),
+        (
+            seq
+            for seq in state["sequences"]
+            if seq["id"] == state["active_sequence_id"]
+        ),
         None,
     )
     if not sequence:
@@ -125,16 +168,22 @@ async def build_plan(
     if not video_track:
         raise HTTPException(status_code=409, detail="Active sequence has no video track")
 
-    ticks_per_second = sequence["timebase"]["numerator"] / sequence["timebase"]["denominator"]
+    ticks_per_second = (
+        sequence["timebase"]["numerator"] / sequence["timebase"]["denominator"]
+    )
     timeline_cursor = 0
     operations: list[dict] = []
 
-    # Rank determines selection; timeline is reordered by source chronology to avoid
-    # a random-feeling cut sequence before an LLM narrative planner is introduced.
-    ordered = sorted(chosen, key=lambda item: (item["asset_id"], item["start"]))
     for candidate in ordered:
         source_start = round(candidate["start"] * ticks_per_second)
-        duration = max(1, round((candidate["end"] - candidate["start"]) * ticks_per_second))
+        duration = max(
+            1,
+            round(
+                (candidate["end"] - candidate["start"])
+                * ticks_per_second
+            ),
+        )
+        role = candidate.get("narrative_role") or "body"
         operations.append(
             {
                 "operation": "add_clip",
@@ -151,18 +200,20 @@ async def build_plan(
                         "source_intelligence_id": candidate["intelligence_id"],
                         "source_unit_index": candidate["unit_index"],
                         "highlight_score": candidate["final_score"],
+                        "narrative_role": role,
                     },
                 },
                 "reason": (
-                    f"Selected grounded transcript moment with score "
-                    f"{candidate['final_score']:.3f}: {candidate['text'][:180]}"
+                    f"{role.title()} clip selected from grounded transcript "
+                    f"with score {candidate['final_score']:.3f}: "
+                    f"{candidate['text'][:180]}"
                 ),
             }
         )
         timeline_cursor += duration
 
     now = utc_now()
-    return {
+    plan = {
         "id": str(uuid.uuid4()),
         "project_id": project["id"],
         "user_id": user_id,
@@ -170,11 +221,17 @@ async def build_plan(
         "status": "proposed",
         "objective": objective,
         "target_duration_sec": body.target_duration_sec,
-        "candidates": sorted(
-            chosen,
-            key=lambda item: (-item["final_score"], item["asset_id"], item["start"]),
-        ),
+        "candidates": ordered,
         "operations": operations,
+        "audience_profile": narrative.get("audience_profile") or {},
+        "narrative_summary": str(narrative.get("narrative_summary") or ""),
+        "caption_suggestion": str(narrative.get("caption_suggestion") or ""),
+        "cta_suggestion": str(narrative.get("cta_suggestion") or ""),
+        "narrative_provider": narrative.get("provider"),
+        "narrative_model": narrative.get("model"),
+        "evaluation": {},
         "created_at": now,
         "updated_at": now,
     }
+    plan["evaluation"] = evaluate_plan(plan)
+    return plan
