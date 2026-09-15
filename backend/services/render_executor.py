@@ -6,6 +6,7 @@ This executor supports:
 - clip transforms: scale, position, rotation, opacity
 - source audio plus standalone audio-track mixing
 - deterministic speech-responsive music ducking via sidechain compression
+- explicit looping audio sources for user-selected music fit
 - playback-rate and volume changes
 - timeline gaps
 - caption burn-in
@@ -199,8 +200,15 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                 input_index = 2 + len(clip_input_index)
                 clip_input_index[clip.clip_id] = input_index
 
-                if clip.metadata.get("_asset_kind") == "image":
+                asset_kind = clip.metadata.get("_asset_kind")
+                if clip.loop_source and asset_kind != "audio":
+                    raise RenderExecutionError(
+                        "source looping is currently supported only for audio clips"
+                    )
+                if asset_kind == "image":
                     command.extend(["-loop", "1", "-framerate", "30", "-i", str(source)])
+                elif clip.loop_source:
+                    command.extend(["-stream_loop", "-1", "-i", str(source)])
                 else:
                     command.extend(["-i", str(source)])
 
@@ -470,6 +478,7 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
         "duration_sec": duration_sec,
         "visual_clip_count": len(visual_clips),
         "audio_source_count": len(audio_clips),
+        "looped_audio_source_count": sum(1 for clip in audio_clips if clip.loop_source),
         "ducked_audio_source_count": len(ducked_audio),
         "caption_count": len(plan.captions),
     }
