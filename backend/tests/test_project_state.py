@@ -168,3 +168,49 @@ def test_track_edit_operations(api_url, session, fresh_user):
     assert all(
         t["id"] != track["id"] for t in removed.json()["sequences"][0]["tracks"]
     )
+
+
+def test_version_history_and_restore(api_url, session, fresh_user):
+    headers = fresh_user["auth_headers"]
+    project = session.post(
+        f"{api_url}/projects", json=_project_payload(), headers=headers
+    ).json()
+    state = session.get(
+        f"{api_url}/projects/{project['id']}/state", headers=headers
+    ).json()
+    sequence_id = state["active_sequence_id"]
+
+    changed = session.post(
+        f"{api_url}/projects/{project['id']}/operations",
+        headers=headers,
+        json={
+            "expected_version": 1,
+            "operation": "rename_sequence",
+            "payload": {"sequence_id": sequence_id, "name": "Changed"},
+        },
+    )
+    assert changed.status_code == 200
+    assert changed.json()["version"] == 2
+
+    versions = session.get(
+        f"{api_url}/projects/{project['id']}/versions", headers=headers
+    )
+    assert versions.status_code == 200
+    assert {item["version"] for item in versions.json()} >= {1, 2}
+
+    restored = session.post(
+        f"{api_url}/projects/{project['id']}/versions/1/restore",
+        headers=headers,
+        json={"expected_version": 2},
+    )
+    assert restored.status_code == 200, restored.text
+    restored_state = restored.json()
+    assert restored_state["version"] == 3
+    assert restored_state["sequences"][0]["name"] == "Main"
+
+    stale_restore = session.post(
+        f"{api_url}/projects/{project['id']}/versions/1/restore",
+        headers=headers,
+        json={"expected_version": 2},
+    )
+    assert stale_restore.status_code == 409
