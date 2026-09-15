@@ -91,6 +91,7 @@ async def compile_render_plan(
                 duration=clip["duration"],
                 source_start=clip["source_start"],
                 source_duration=clip["source_duration"],
+                loop_source=bool(clip.get("loop_source", False)),
                 playback_rate=clip["playback_rate"],
                 volume=clip["volume"],
                 transition_in=clip.get("transition_in"),
