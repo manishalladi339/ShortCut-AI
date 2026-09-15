@@ -12,6 +12,7 @@ def plan_loop_segments(
     asset_duration_ticks: int,
     source_start_ticks: int,
     requested_crossfade_ticks: int,
+    max_segments: int = 200,
 ) -> tuple[list[dict], dict]:
     """Fit a music asset across the output using bounded overlapping loops.
 
@@ -24,6 +25,8 @@ def plan_loop_segments(
     asset_duration = int(asset_duration_ticks)
     source_start = int(source_start_ticks)
     requested_crossfade = max(0, int(requested_crossfade_ticks))
+    if max_segments < 1:
+        raise MusicFitError("max_segments must be positive")
 
     if output_duration <= 0:
         raise MusicFitError("output duration must be positive")
@@ -70,6 +73,10 @@ def plan_loop_segments(
     timeline_end = first_available
 
     while timeline_end < output_duration:
+        if len(segments) >= max_segments:
+            raise MusicFitError(
+                f"music loop would require more than {max_segments} segments"
+            )
         timeline_start = max(0, timeline_end - crossfade)
         remaining = output_duration - timeline_start
         duration = min(asset_duration, remaining)
