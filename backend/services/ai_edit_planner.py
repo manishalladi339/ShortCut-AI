@@ -210,6 +210,26 @@ async def build_plan(
                 ),
             }
         )
+        if body.include_captions:
+            caption_text = candidate["text"].strip()
+            if len(caption_text) > 500:
+                caption_text = caption_text[:497].rstrip() + "..."
+            operations.append(
+                {
+                    "operation": "add_caption",
+                    "payload": {
+                        "sequence_id": sequence["id"],
+                        "start": timeline_cursor,
+                        "duration": duration,
+                        "text": caption_text,
+                        "style": {
+                            "source": "transcript",
+                            "narrative_role": role,
+                        },
+                    },
+                    "reason": "Grounded caption copied from the selected transcript unit",
+                }
+            )
         timeline_cursor += duration
 
     now = utc_now()
