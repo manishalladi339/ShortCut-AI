@@ -90,6 +90,7 @@ async def _get_or_create_state(project_id: str, user_id: str) -> dict:
         {"project_id": project_id, "user_id": user_id}, {"_id": 0}
     )
     if state:
+        await _save_snapshot(state, operation="backfill")
         return state
 
     state = _new_state(project_id, user_id)
