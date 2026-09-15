@@ -87,6 +87,18 @@ Application:
 Existing timeline clips are never replaced unless the caller explicitly sets
 `replace_existing_video_clips=true`.
 
+## Human review before apply
+
+Each new proposed operation now has a stable operation ID. The apply request may
+include an `operation_ids` allowlist so optional B-roll and caption suggestions
+can be rejected before ProjectState is changed.
+
+Primary story clip operations remain an atomic timing group: if a reviewed apply
+request selects any subset, it must include all primary `add_clip` operations.
+This protects downstream caption/B-roll timing from becoming invalid after
+partial story edits. Applied and skipped operation IDs are written back to the
+plan and edit-history record.
+
 ## Planner evaluation
 
 Every generated plan stores measurable baseline metrics including:
@@ -121,4 +133,4 @@ Still to build:
 - dedicated music-track selection/mixing
 - richer transition primitives and keyframes
 - creator preference learning
-- frontend review controls for accepting/rejecting individual AI operations
+- frontend UI for the now-supported granular operation review contract
