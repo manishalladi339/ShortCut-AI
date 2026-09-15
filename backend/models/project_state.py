@@ -125,5 +125,15 @@ class EditOperation(BaseModel):
     payload: dict[str, Any]
 
 
+class RestoreVersionRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+
+
+class ProjectVersionSummary(BaseModel):
+    version: int = Field(ge=1)
+    created_at: Any
+    operation: str | None = None
+
+
 class ProjectStateOut(ProjectStateDocument):
     pass
