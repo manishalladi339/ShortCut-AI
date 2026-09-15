@@ -1,74 +1,98 @@
 # Media intelligence pipeline
 
-This layer converts processed media into an auditable, time-aligned representation
-that later AI planning can consume.
+This layer converts processed media into an auditable, time-aligned multimodal
+representation for retrieval and AI edit planning.
 
 ## Pipeline
 
 ```text
 Processed asset
   -> mono 16 kHz speech audio
-  -> timestamped transcription
+  -> diarized transcription
+  -> speaker-labelled segments
   -> scene-change detection
-  -> normalized word/segment timeline
-  -> semantic units
+  -> representative scene frames
+  -> visual observations
+  -> speaker-aware semantic units
   -> embeddings
   -> project-scoped semantic retrieval
-  -> later: diarization, highlights, narrative analysis and edit planning
+  -> planner
 ```
 
-## Current implementation
+## Speech intelligence
 
-- authenticated analysis trigger per asset
-- idempotent queued/running behavior
-- background media-intelligence job
-- FFmpeg audio extraction
-- OpenAI-compatible transcription adapter
-- word and segment timestamp normalization
-- deterministic FFmpeg scene-change detection
-- retrieval-ready semantic units that preserve original transcript wording
-- OpenAI-compatible embedding provider
-- batched semantic-unit embeddings
-- project-scoped cosine-similarity retrieval
-- persisted analysis document and job metrics
+The OpenAI-compatible transcription adapter supports normal timestamped
+transcription and diarized transcription.
 
-The default embedding model is `text-embedding-3-small`, configurable through
-`EMBEDDING_MODEL`. Embedding vectors are stored separately from the public
-semantic-unit payload so normal API responses do not return large raw vectors.
+The default configuration now uses `gpt-4o-transcribe-diarize` with
+`diarized_json`. Speaker annotations are preserved on transcript segments and
+speaker labels are exposed on the media-intelligence record.
 
-## Retrieval
+When diarization is enabled, semantic units can split at speaker changes so a
+single retrieval unit does not accidentally merge two different speakers into
+one statement.
 
-`POST /api/v1/projects/{project_id}/intelligence/search`
+For providers/models without diarization, the same schemas remain valid with
+empty speaker fields.
 
-The query is embedded with the same model used for analyzed units. Results return:
-- source asset
-- intelligence record
-- unit index
-- time range
-- transcript text
-- cosine-similarity score
+## Visual intelligence
 
-This gives the later AI planner a grounded way to locate moments such as
-"the part where the guest explains the pricing problem" across project media.
+Video analysis uses deterministic scene detection first. The system then samples
+representative frames from scene midpoints, with a configured maximum frame
+budget.
 
-## Provider boundary
+`VISION_PROVIDER=openai` sends only those representative frames to the visual
+provider rather than blindly sampling every second of a video.
 
-Transcription and embeddings are behind provider interfaces. Current production
-adapters use OpenAI-compatible REST endpoints. API keys are supplied only through
-environment variables and are never committed.
+Each returned observation can contain:
+- timestamp
+- visual description
+- shot type
+- visible-object labels
+- visible people count
+- on-screen text
+- editing notes
+- provider/model provenance
 
-OpenAI's embeddings API supports arrays of input strings, so semantic units are
-embedded in batches rather than one request per unit.
+The provider is explicitly instructed not to infer the identity of people in a
+frame.
 
-## Important limitations
+`VISION_PROVIDER=disabled` preserves deterministic frame timestamps while
+skipping model analysis.
 
-Speaker diarization is not yet implemented. The schema already carries optional
-`speaker` fields so a diarization stage can enrich words and segments without
-breaking the data model.
+## Semantic retrieval
 
-Semantic units remain deterministic transcript chunks, not LLM-written summaries.
-Retrieval therefore grounds later reasoning in the original transcript rather than
-a model-generated rewrite.
+Transcript semantic units remain grounded in original transcript wording. They
+are embedded in batches and searched project-wide using cosine similarity.
 
-Highlight ranking, narrative/audience analysis and the structured AI edit planner
-are the next milestones.
+Retrieval results contain:
+- asset ID
+- intelligence record ID
+- semantic-unit index
+- source time range
+- original transcript text
+- similarity score
+
+## Grounding principle
+
+Multimodal observations are additional planning signals; they do not replace
+source timestamps or transcript grounding.
+
+The planner should always be able to explain:
+1. which source asset a proposed edit came from,
+2. which time range was selected,
+3. which transcript/visual evidence informed it,
+4. which model/provider produced non-deterministic annotations.
+
+## Current limitations
+
+Still to build:
+- known-speaker enrollment/reference samples
+- cross-asset speaker identity continuity
+- visual-observation embeddings
+- visual-semantic retrieval
+- subject tracking across shots
+- face-safe active-speaker association
+- B-roll recommendation and placement
+- music/beat/silence intelligence
+- creator preference memory
