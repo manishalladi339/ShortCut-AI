@@ -102,12 +102,23 @@ def evaluate_plan(plan: dict) -> dict:
         for operation in operations
         if operation.get("operation") == "add_clip"
     )
+    rhythm_snapped_overlay_count = sum(
+        1
+        for operation in operations
+        if operation.get("operation") == "add_broll_overlay"
+        and bool(
+            ((operation.get("payload") or {}).get("metadata") or {}).get(
+                "rhythm_snapped"
+            )
+        )
+    )
 
     return {
         "operation_count": len(operations),
         "selected_duration_sec": selected_duration_sec,
         "dead_air_removed_sec": dead_air_removed_sec,
         "primary_clip_part_count": primary_clip_part_count,
+        "rhythm_snapped_overlay_count": rhythm_snapped_overlay_count,
         "average_highlight_score": (
             round(sum(scores) / len(scores), 4)
             if scores
