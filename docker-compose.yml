@@ -14,7 +14,7 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
-    environment:
+    environment: &backend-env
       MONGO_URL: mongodb://mongo:27017
       DB_NAME: shortcut_ai
       JWT_SECRET: local-development-secret-change-me
@@ -22,6 +22,10 @@ services:
       STORAGE_BACKEND: local
       STUB_STORAGE_DIR: /data/storage
       FFPROBE_PATH: ffprobe
+      FFMPEG_PATH: ffmpeg
+      MEDIA_PROBE_TIMEOUT_SEC: "30"
+      MEDIA_DERIVATIVE_TIMEOUT_SEC: "180"
+      RENDER_TIMEOUT_SEC: "900"
       WORKER_POLL_INTERVAL_SEC: "1.0"
     ports:
       - "8001:8001"
@@ -31,20 +35,24 @@ services:
       mongo:
         condition: service_healthy
 
-  worker:
+  media-worker:
     build:
       context: ./backend
     restart: unless-stopped
     command: ["python", "-m", "workers.media_worker"]
-    environment:
-      MONGO_URL: mongodb://mongo:27017
-      DB_NAME: shortcut_ai
-      JWT_SECRET: local-development-secret-change-me
-      APP_PUBLIC_URL: http://localhost:8001
-      STORAGE_BACKEND: local
-      STUB_STORAGE_DIR: /data/storage
-      FFPROBE_PATH: ffprobe
-      WORKER_POLL_INTERVAL_SEC: "1.0"
+    environment: *backend-env
+    volumes:
+      - shortcut-storage:/data/storage
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  render-worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "workers.render_worker"]
+    environment: *backend-env
     volumes:
       - shortcut-storage:/data/storage
     depends_on:
