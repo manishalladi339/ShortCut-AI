@@ -270,6 +270,18 @@ async def apply_plan(
 
         source_start = int(payload.get("source_start", 0))
         source_duration = int(payload["source_duration"])
+        loop_source = bool(payload.get("loop_source", False))
+        if loop_source and operation_type != "add_music_bed":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "code": "planner.loop_source_not_audio_bed",
+                        "message": "AI source looping is currently supported only for music beds",
+                    }
+                },
+            )
+
         asset_duration_sec = float(asset.get("duration_sec") or 0.0)
         if asset_duration_sec > 0:
             ticks_per_second = (
@@ -277,7 +289,19 @@ async def apply_plan(
                 / sequence["timebase"]["denominator"]
             )
             asset_duration_ticks = round(asset_duration_sec * ticks_per_second)
-            if source_start + source_duration > asset_duration_ticks + 1:
+            if loop_source:
+                if source_start >= asset_duration_ticks:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error": {
+                                "code": "planner.source_out_of_bounds",
+                                "message": "Loop source start exceeds the media duration",
+                                "asset_id": payload["asset_id"],
+                            }
+                        },
+                    )
+            elif source_start + source_duration > asset_duration_ticks + 1:
                 raise HTTPException(
                     status_code=422,
                     detail={
@@ -296,6 +320,7 @@ async def apply_plan(
             duration=int(payload["duration"]),
             source_start=source_start,
             source_duration=source_duration,
+            loop_source=loop_source,
             volume=float(payload.get("volume", 1.0)),
             transition_in=_transition(payload, "transition_in"),
             transition_out=_transition(payload, "transition_out"),
