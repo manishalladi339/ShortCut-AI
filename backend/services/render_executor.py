@@ -58,18 +58,10 @@ def _transition_seconds(
     if transition is None:
         return 0.0
     if transition.kind != "fade":
-        raise RenderExecutionError(
-            f"unsupported transition kind: {transition.kind}"
-        )
-    duration = _ticks_to_seconds(
-        transition.duration,
-        numerator,
-        denominator,
-    )
+        raise RenderExecutionError(f"unsupported transition kind: {transition.kind}")
+    duration = _ticks_to_seconds(transition.duration, numerator, denominator)
     if duration <= 0 or duration > clip_duration_sec + 1e-6:
-        raise RenderExecutionError(
-            "transition duration must fit inside the clip"
-        )
+        raise RenderExecutionError("transition duration must fit inside the clip")
     return duration
 
 
@@ -90,9 +82,7 @@ def _run(command: list[str]) -> None:
         raise RenderExecutionError("render timed out") from exc
 
     if completed.returncode != 0:
-        raise RenderExecutionError(
-            (completed.stderr or "ffmpeg failed").strip()[-6000:]
-        )
+        raise RenderExecutionError((completed.stderr or "ffmpeg failed").strip()[-6000:])
 
 
 def _srt_time(seconds: float) -> str:
@@ -122,12 +112,7 @@ def _write_srt(plan: RenderPlan, destination: Path) -> None:
 
 
 def _escape_filter_path(path: Path) -> str:
-    return (
-        str(path)
-        .replace("\\", "\\\\")
-        .replace(":", "\\:")
-        .replace("'", "\\'")
-    )
+    return str(path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
 
 def execute(plan: RenderPlan, output_path: Path) -> dict:
@@ -180,9 +165,7 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
         with ExitStack() as stack:
             for clip in plan.clips:
                 suffix = Path(clip.source_storage_key).suffix
-                source = stack.enter_context(
-                    materialize(clip.source_storage_key, suffix=suffix)
-                )
+                source = stack.enter_context(materialize(clip.source_storage_key, suffix=suffix))
                 input_index = 2 + len(clip_input_index)
                 clip_input_index[clip.clip_id] = input_index
 
@@ -197,24 +180,16 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
             for idx, clip in enumerate(ordered_visuals):
                 input_index = clip_input_index[clip.clip_id]
                 source_start = _ticks_to_seconds(
-                    clip.source_start,
-                    plan.timebase_numerator,
-                    plan.timebase_denominator,
+                    clip.source_start, plan.timebase_numerator, plan.timebase_denominator
                 )
                 source_duration = _ticks_to_seconds(
-                    clip.source_duration,
-                    plan.timebase_numerator,
-                    plan.timebase_denominator,
+                    clip.source_duration, plan.timebase_numerator, plan.timebase_denominator
                 )
                 target_duration = _ticks_to_seconds(
-                    clip.duration,
-                    plan.timebase_numerator,
-                    plan.timebase_denominator,
+                    clip.duration, plan.timebase_numerator, plan.timebase_denominator
                 )
                 timeline_start = _ticks_to_seconds(
-                    clip.timeline_start,
-                    plan.timebase_numerator,
-                    plan.timebase_denominator,
+                    clip.timeline_start, plan.timebase_numerator, plan.timebase_denominator
                 )
 
                 transform = clip.metadata.get("_transform", {})
@@ -230,12 +205,14 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                 prepared = f"vprep{idx}"
                 rotation_radians = rotation * math.pi / 180.0
 
+                # Fades are evaluated before the clip is shifted onto the timeline.
+                # This keeps transition times clip-local: fade-in starts at zero and
+                # fade-out starts at target_duration - fade_out.
                 visual_filter = (
                     f"[{source_label}]"
                     f"trim=start={source_start:.6f}:duration={source_duration:.6f},"
                     f"setpts=(PTS-STARTPTS)/{clip.playback_rate},"
                     f"trim=duration={target_duration:.6f},"
-                    f"setpts=PTS+{timeline_start:.6f}/TB,"
                     f"scale={plan.width}:{plan.height}:force_original_aspect_ratio=decrease,"
                     f"scale=iw*{scale:.8f}:ih*{scale:.8f},"
                     "format=rgba,"
@@ -258,18 +235,16 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     clip_duration_sec=target_duration,
                 )
                 if fade_in > 0:
-                    visual_filter += (
-                        f"fade=t=in:st={timeline_start:.6f}:"
-                        f"d={fade_in:.6f}:alpha=1,"
-                    )
+                    visual_filter += f"fade=t=in:st=0:d={fade_in:.6f}:alpha=1,"
                 if fade_out > 0:
-                    fade_out_start = timeline_start + target_duration - fade_out
+                    fade_out_start = max(0.0, target_duration - fade_out)
                     visual_filter += (
                         f"fade=t=out:st={fade_out_start:.6f}:"
                         f"d={fade_out:.6f}:alpha=1,"
                     )
                 visual_filter += (
-                    f"colorchannelmixer=aa={opacity:.8f}"
+                    f"colorchannelmixer=aa={opacity:.8f},"
+                    f"setpts=PTS+{timeline_start:.6f}/TB"
                     f"[{prepared}]"
                 )
                 filters.append(visual_filter)
@@ -288,19 +263,13 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
             for idx, clip in enumerate(audio_clips):
                 input_index = clip_input_index[clip.clip_id]
                 source_start = _ticks_to_seconds(
-                    clip.source_start,
-                    plan.timebase_numerator,
-                    plan.timebase_denominator,
+                    clip.source_start, plan.timebase_numerator, plan.timebase_denominator
                 )
                 source_duration = _ticks_to_seconds(
-                    clip.source_duration,
-                    plan.timebase_numerator,
-                    plan.timebase_denominator,
+                    clip.source_duration, plan.timebase_numerator, plan.timebase_denominator
                 )
                 target_duration = _ticks_to_seconds(
-                    clip.duration,
-                    plan.timebase_numerator,
-                    plan.timebase_denominator,
+                    clip.duration, plan.timebase_numerator, plan.timebase_denominator
                 )
                 delay_ms = round(
                     _ticks_to_seconds(
