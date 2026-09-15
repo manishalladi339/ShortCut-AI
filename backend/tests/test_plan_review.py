@@ -71,3 +71,21 @@ def test_legacy_plan_requires_regeneration_for_granular_review():
     with pytest.raises(PlanReviewError) as exc:
         select_reviewed_operations(legacy, ["anything"])
     assert exc.value.code == "planner.plan_not_reviewable"
+
+
+def test_music_bed_is_optional_during_granular_review():
+    operations = _operations() + [
+        {"id": "m1", "operation": "add_music_bed", "payload": {}},
+    ]
+    selected, applied, skipped = select_reviewed_operations(
+        operations,
+        ["p1", "p2", "b1", "c1"],
+    )
+    assert [item["id"] for item in selected] == [
+        "p1",
+        "p2",
+        "b1",
+        "c1",
+    ]
+    assert "m1" not in applied
+    assert skipped == ["m1"]
