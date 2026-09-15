@@ -32,6 +32,7 @@ from services.speaker_editing import (
     primary_speaker,
     speaker_allowed,
 )
+from services.transition_planning import broll_fade_ticks
 
 
 def _candidate_key(item: dict) -> str:
@@ -462,6 +463,20 @@ async def build_plan(
             )
             if source_range:
                 broll_source_start, broll_duration = source_range
+                fade_ticks = 0
+                fade_meta = {"strategy": "disabled"}
+                if body.broll_fade:
+                    fade_ticks, fade_meta = broll_fade_ticks(
+                        clip_duration_ticks=broll_duration,
+                        ticks_per_second=ticks_per_second,
+                        requested_fade_sec=body.broll_fade_sec,
+                        rhythm_event=rhythm_event,
+                    )
+                transition = (
+                    {"kind": "fade", "duration": fade_ticks}
+                    if fade_ticks > 0
+                    else None
+                )
                 operations.append(
                     {
                         "operation": "add_broll_overlay",
@@ -474,6 +489,8 @@ async def build_plan(
                             "source_start": broll_source_start,
                             "source_duration": broll_duration,
                             "volume": 0.0,
+                            "transition_in": transition,
+                            "transition_out": transition,
                             "metadata": {
                                 "ai_plan": True,
                                 "broll": True,
@@ -513,6 +530,13 @@ async def build_plan(
                                     if rhythm_event
                                     else None
                                 ),
+                                "transition_strategy": fade_meta.get(
+                                    "strategy"
+                                ),
+                                "transition_fade_ticks": fade_ticks,
+                                "transition_fade_sec": fade_meta.get(
+                                    "planned_fade_sec"
+                                ),
                             },
                         },
                         "reason": (
@@ -524,6 +548,12 @@ async def build_plan(
                                 " and its entrance was snapped to a "
                                 "nearby measured audio onset"
                                 if rhythm_event
+                                else ""
+                            )
+                            + (
+                                f" with {fade_meta.get('strategy')} "
+                                "fade transitions"
+                                if fade_ticks > 0
                                 else ""
                             )
                         ),
