@@ -50,6 +50,21 @@ class Settings:
     SILENCE_SNAP_WINDOW_SEC: float = float(
         os.environ.get("SILENCE_SNAP_WINDOW_SEC", "0.75")
     )
+    RHYTHM_WINDOW_MS: float = float(
+        os.environ.get("RHYTHM_WINDOW_MS", "50")
+    )
+    RHYTHM_BASELINE_SEC: float = float(
+        os.environ.get("RHYTHM_BASELINE_SEC", "0.4")
+    )
+    RHYTHM_ENERGY_RATIO: float = float(
+        os.environ.get("RHYTHM_ENERGY_RATIO", "1.8")
+    )
+    RHYTHM_MIN_RMS: float = float(
+        os.environ.get("RHYTHM_MIN_RMS", "300")
+    )
+    RHYTHM_MIN_INTERVAL_SEC: float = float(
+        os.environ.get("RHYTHM_MIN_INTERVAL_SEC", "0.25")
+    )
 
     # Speech / AI providers
     TRANSCRIPTION_PROVIDER: str = os.environ.get("TRANSCRIPTION_PROVIDER", "openai")
