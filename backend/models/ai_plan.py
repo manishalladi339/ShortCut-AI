@@ -94,3 +94,7 @@ class CreateAIEditPlanRequest(BaseModel):
     rhythm_snap_window_sec: float = Field(default=0.35, ge=0.0, le=1.0)
     broll_fade: bool = True
     broll_fade_sec: float = Field(default=0.18, ge=0.05, le=1.0)
+    music_asset_id: str | None = Field(default=None, max_length=120)
+    music_source_start_sec: float = Field(default=0.0, ge=0.0, le=7200.0)
+    music_volume: float = Field(default=0.12, ge=0.0, le=1.0)
+    music_fade_sec: float = Field(default=0.75, ge=0.05, le=5.0)
