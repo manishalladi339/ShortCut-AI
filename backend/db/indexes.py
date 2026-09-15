@@ -44,6 +44,9 @@ async def ensure_indexes() -> None:
     await db.jobs.create_index([("user_id", 1), ("created_at", -1)])
     await db.jobs.create_index("asset_id")
 
+    await db.exports.create_index([("user_id", 1), ("project_id", 1), ("created_at", -1)])
+    await db.exports.create_index("job_id", unique=True)
+
     await db.audit_logs.create_index("user_id")
     await db.audit_logs.create_index("action")
     await db.audit_logs.create_index([("created_at", -1)])
