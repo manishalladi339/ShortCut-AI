@@ -18,6 +18,7 @@ class HighlightCandidate(BaseModel):
     relevance_score: float = Field(ge=-1, le=1)
     final_score: float = Field(ge=0, le=1)
     reasons: list[str] = Field(default_factory=list)
+    narrative_role: str | None = None
 
 
 class ProposedEditOperation(BaseModel):
@@ -36,6 +37,13 @@ class AIEditPlanOut(BaseModel):
     target_duration_sec: float = Field(gt=0)
     candidates: list[HighlightCandidate] = Field(default_factory=list)
     operations: list[ProposedEditOperation] = Field(default_factory=list)
+    audience_profile: dict[str, Any] = Field(default_factory=dict)
+    narrative_summary: str = ""
+    caption_suggestion: str = ""
+    cta_suggestion: str = ""
+    narrative_provider: str | None = None
+    narrative_model: str | None = None
+    evaluation: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     applied_project_state_version: int | None = None
@@ -48,6 +56,7 @@ class ApplyAIEditPlanRequest(BaseModel):
 
 class CreateAIEditPlanRequest(BaseModel):
     objective: str | None = Field(default=None, max_length=2000)
+    target_audience: str | None = Field(default=None, max_length=500)
     target_duration_sec: float = Field(default=45.0, ge=5.0, le=300.0)
     max_clips: int = Field(default=8, ge=1, le=30)
     min_clip_sec: float = Field(default=2.0, ge=0.5, le=30.0)
