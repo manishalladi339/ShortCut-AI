@@ -17,6 +17,8 @@ from models.project_state import (
     ProjectStateDocument,
     ProjectStateOut,
     ProjectStateReplace,
+    ProjectVersionSummary,
+    RestoreVersionRequest,
     Sequence,
     Track,
     TrackKind,
@@ -93,6 +95,7 @@ async def _get_or_create_state(project_id: str, user_id: str) -> dict:
     state = _new_state(project_id, user_id)
     try:
         await db.project_states.insert_one(copy.deepcopy(state))
+        await _save_snapshot(state, operation="initialize")
     except Exception:
         existing = await db.project_states.find_one(
             {"project_id": project_id, "user_id": user_id}, {"_id": 0}
@@ -101,6 +104,25 @@ async def _get_or_create_state(project_id: str, user_id: str) -> dict:
             return existing
         raise
     return state
+
+
+async def _save_snapshot(state: dict, operation: str | None = None) -> None:
+    """Persist a complete immutable version snapshot for undo/restore."""
+    await get_db().project_state_versions.update_one(
+        {
+            "project_id": state["project_id"],
+            "user_id": state["user_id"],
+            "version": state["version"],
+        },
+        {
+            "$setOnInsert": {
+                **copy.deepcopy(state),
+                "snapshot_created_at": utc_now(),
+                "operation": operation,
+            }
+        },
+        upsert=True,
+    )
 
 
 def _find_sequence(state: dict, sequence_id: str) -> dict:
@@ -378,6 +400,7 @@ async def replace_project_state(
             "created_at": now,
         }
     )
+    await _save_snapshot(candidate, operation="replace_state")
     return ProjectStateOut(**candidate)
 
 
@@ -429,4 +452,106 @@ async def apply_edit_operation(
             "created_at": now,
         }
     )
+    await _save_snapshot(candidate, operation=body.operation)
     return ProjectStateOut(**candidate)
+
+
+@router.get("/{project_id}/versions", response_model=list[ProjectVersionSummary])
+async def list_project_versions(
+    project_id: str,
+    limit: int = 50,
+    user: dict = Depends(get_current_user),
+) -> list[ProjectVersionSummary]:
+    await _owned_project(project_id, user["id"])
+    docs = await (
+        get_db().project_state_versions.find(
+            {"project_id": project_id, "user_id": user["id"]},
+            {"_id": 0, "version": 1, "snapshot_created_at": 1, "operation": 1},
+        )
+        .sort("version", -1)
+        .limit(max(1, min(limit, 200)))
+        .to_list(max(1, min(limit, 200)))
+    )
+    return [
+        ProjectVersionSummary(
+            version=doc["version"],
+            created_at=doc.get("snapshot_created_at"),
+            operation=doc.get("operation"),
+        )
+        for doc in docs
+    ]
+
+
+@router.get("/{project_id}/versions/{version}", response_model=ProjectStateOut)
+async def get_project_version(
+    project_id: str,
+    version: int,
+    user: dict = Depends(get_current_user),
+) -> ProjectStateOut:
+    await _owned_project(project_id, user["id"])
+    snapshot = await get_db().project_state_versions.find_one(
+        {"project_id": project_id, "user_id": user["id"], "version": version},
+        {"_id": 0, "snapshot_created_at": 0, "operation": 0},
+    )
+    if not snapshot:
+        raise _error("project_state.version_not_found", "Version not found", 404)
+    return ProjectStateOut(**snapshot)
+
+
+@router.post("/{project_id}/versions/{version}/restore", response_model=ProjectStateOut)
+async def restore_project_version(
+    project_id: str,
+    version: int,
+    body: RestoreVersionRequest,
+    user: dict = Depends(get_current_user),
+) -> ProjectStateOut:
+    db = get_db()
+    current = await _get_or_create_state(project_id, user["id"])
+    if current["version"] != body.expected_version:
+        raise _conflict(current["version"])
+
+    snapshot = await db.project_state_versions.find_one(
+        {"project_id": project_id, "user_id": user["id"], "version": version},
+        {"_id": 0, "snapshot_created_at": 0, "operation": 0},
+    )
+    if not snapshot:
+        raise _error("project_state.version_not_found", "Version not found", 404)
+
+    now = utc_now()
+    restored = {
+        **snapshot,
+        "version": current["version"] + 1,
+        "created_at": current["created_at"],
+        "updated_at": now,
+    }
+    restored = ProjectStateDocument(**restored).model_dump()
+
+    result = await db.project_states.replace_one(
+        {
+            "project_id": project_id,
+            "user_id": user["id"],
+            "version": body.expected_version,
+        },
+        restored,
+    )
+    if result.modified_count != 1:
+        latest = await db.project_states.find_one(
+            {"project_id": project_id, "user_id": user["id"]},
+            {"_id": 0, "version": 1},
+        )
+        raise _conflict((latest or {}).get("version", body.expected_version))
+
+    await db.edit_operations.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "project_id": project_id,
+            "user_id": user["id"],
+            "from_version": body.expected_version,
+            "to_version": restored["version"],
+            "operation": "restore_version",
+            "payload": {"restored_from_version": version},
+            "created_at": now,
+        }
+    )
+    await _save_snapshot(restored, operation=f"restore:{version}")
+    return ProjectStateOut(**restored)
