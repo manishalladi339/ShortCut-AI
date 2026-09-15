@@ -18,6 +18,7 @@ class RenderClip(BaseModel):
     clip_id: str
     track_id: str
     track_kind: str
+    track_index: int = Field(ge=0)
     asset_id: str
     source_storage_key: str
     timeline_start: int = Field(ge=0)
