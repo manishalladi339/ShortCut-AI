@@ -184,14 +184,57 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
             "".join(f"file '{path.as_posix()}'\n" for path in segment_paths),
             encoding="utf-8",
         )
+        concatenated = root / "timeline.mp4"
         _run([
             settings.FFMPEG_PATH, "-y",
             "-f", "concat", "-safe", "0",
             "-i", str(concat_file),
             "-c", "copy",
             "-movflags", "+faststart",
-            str(output_path),
+            str(concatenated),
         ])
+
+        if plan.captions:
+            def _srt_time(seconds: float) -> str:
+                millis = max(0, round(seconds * 1000))
+                hours, remainder = divmod(millis, 3_600_000)
+                minutes, remainder = divmod(remainder, 60_000)
+                secs, ms = divmod(remainder, 1000)
+                return f"{hours:02}:{minutes:02}:{secs:02},{ms:03}"
+
+            srt_path = root / "captions.srt"
+            blocks: list[str] = []
+            for index, cue in enumerate(plan.captions, start=1):
+                start_sec = _ticks_to_seconds(
+                    cue.start, plan.timebase_numerator, plan.timebase_denominator
+                )
+                end_sec = _ticks_to_seconds(
+                    cue.start + cue.duration,
+                    plan.timebase_numerator,
+                    plan.timebase_denominator,
+                )
+                text = cue.text.replace("\r", " ").strip()
+                blocks.append(
+                    f"{index}\n{_srt_time(start_sec)} --> {_srt_time(end_sec)}\n{text}\n"
+                )
+            srt_path.write_text("\n".join(blocks), encoding="utf-8")
+            escaped = (
+                str(srt_path)
+                .replace("\\", "\\\\")
+                .replace(":", "\\:")
+                .replace("'", "\\'")
+            )
+            _run([
+                settings.FFMPEG_PATH, "-y",
+                "-i", str(concatenated),
+                "-vf", f"subtitles='{escaped}'",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                str(output_path),
+            ])
+        else:
+            output_path.write_bytes(concatenated.read_bytes())
 
     if not output_path.is_file() or output_path.stat().st_size == 0:
         raise RenderExecutionError("renderer did not produce a valid output file")
