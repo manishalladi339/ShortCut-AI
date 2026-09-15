@@ -33,7 +33,7 @@ from services.speaker_editing import (
     primary_speaker,
     speaker_allowed,
 )
-from services.transition_planning import broll_fade_ticks
+from services.transition_planning import broll_fade_ticks, bounded_fade_ticks
 
 
 def _candidate_key(item: dict) -> str:
@@ -276,6 +276,55 @@ async def build_plan(
         ),
         None,
     )
+    audio_track = next(
+        (
+            track
+            for track in sequence["tracks"]
+            if track["kind"] == "audio" and not track.get("locked")
+        ),
+        None,
+    )
+    music_asset = None
+    if body.music_asset_id:
+        if not audio_track:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": {
+                        "code": "planner.audio_track_unavailable",
+                        "message": "An unlocked audio track is required for a music bed",
+                    }
+                },
+            )
+        music_asset = await db.assets.find_one(
+            {
+                "id": body.music_asset_id,
+                "user_id": user_id,
+                "processing_status": "ready",
+            },
+            {"_id": 0, "id": 1, "kind": 1, "duration_sec": 1},
+        )
+        if not music_asset:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": {
+                        "code": "planner.music_asset_unavailable",
+                        "message": "Selected music asset is not available or ready",
+                    }
+                },
+            )
+        if music_asset.get("kind") != "audio":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "code": "planner.music_asset_not_audio",
+                        "message": "Selected music asset must be an audio asset",
+                    }
+                },
+            )
+
     ticks_per_second = (
         sequence["timebase"]["numerator"]
         / sequence["timebase"]["denominator"]
@@ -583,6 +632,89 @@ async def build_plan(
                     ),
                 }
             )
+
+    if music_asset:
+        output_duration = timeline_cursor
+        music_source_start = round(
+            body.music_source_start_sec * ticks_per_second
+        )
+        music_duration_ticks = round(
+            float(music_asset.get("duration_sec") or 0.0)
+            * ticks_per_second
+        )
+        if output_duration <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "code": "planner.empty_output",
+                        "message": "Music cannot be added to an empty output timeline",
+                    }
+                },
+            )
+        if music_source_start + output_duration > music_duration_ticks + 1:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "code": "planner.music_asset_too_short",
+                        "message": (
+                            "Selected music does not have enough remaining "
+                            "duration to cover the planned output"
+                        ),
+                        "asset_id": music_asset["id"],
+                        "required_duration_sec": round(
+                            output_duration / ticks_per_second,
+                            3,
+                        ),
+                        "source_start_sec": body.music_source_start_sec,
+                    }
+                },
+            )
+
+        music_fade_ticks, music_fade_meta = bounded_fade_ticks(
+            clip_duration_ticks=output_duration,
+            ticks_per_second=ticks_per_second,
+            requested_fade_sec=body.music_fade_sec,
+        )
+        music_transition = (
+            {"kind": "fade", "duration": music_fade_ticks}
+            if music_fade_ticks > 0
+            else None
+        )
+        operations.append(
+            {
+                "operation": "add_music_bed",
+                "payload": {
+                    "sequence_id": sequence["id"],
+                    "track_id": audio_track["id"],
+                    "asset_id": music_asset["id"],
+                    "timeline_start": 0,
+                    "duration": output_duration,
+                    "source_start": music_source_start,
+                    "source_duration": output_duration,
+                    "volume": body.music_volume,
+                    "transition_in": music_transition,
+                    "transition_out": music_transition,
+                    "metadata": {
+                        "ai_plan": True,
+                        "music_bed": True,
+                        "user_selected_music": True,
+                        "music_volume": body.music_volume,
+                        "music_source_start_sec": body.music_source_start_sec,
+                        "transition_strategy": music_fade_meta.get("strategy"),
+                        "transition_fade_ticks": music_fade_ticks,
+                        "transition_fade_sec": music_fade_meta.get(
+                            "planned_fade_sec"
+                        ),
+                    },
+                },
+                "reason": (
+                    "User-selected music bed placed under the complete "
+                    "planned output with deterministic volume and fades"
+                ),
+            }
+        )
 
     assign_operation_ids(operations)
     now = utc_now()
