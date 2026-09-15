@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 from db.mongo import get_db
-from models.render_plan import RenderClip, RenderPlan
+from models.render_plan import RenderCaption, RenderClip, RenderPlan
 
 
 async def compile_render_plan(
@@ -98,6 +98,13 @@ async def compile_render_plan(
             duration_ticks = max(duration_ticks, clip["timeline_start"] + clip["duration"])
 
     render_clips.sort(key=lambda c: (c.timeline_start, c.track_id, c.clip_id))
+    render_captions = [
+        RenderCaption(**cue)
+        for cue in sorted(sequence.get("captions", []), key=lambda item: item["start"])
+    ]
+    for cue in render_captions:
+        duration_ticks = max(duration_ticks, cue.start + cue.duration)
+
     return RenderPlan(
         project_id=project_id,
         project_state_version=state["version"],
@@ -108,4 +115,5 @@ async def compile_render_plan(
         timebase_denominator=sequence["timebase"]["denominator"],
         duration_ticks=duration_ticks,
         clips=render_clips,
+        captions=render_captions,
     )
