@@ -30,6 +30,17 @@ class ClipTransition(BaseModel):
     duration: int = Field(gt=0)
 
 
+class AudioDucking(BaseModel):
+    """Deterministic sidechain-compression settings for an audio clip."""
+
+    enabled: bool = True
+    threshold: float = Field(default=0.03, ge=0.00097563, le=1.0)
+    ratio: float = Field(default=8.0, ge=1.0, le=20.0)
+    attack_ms: float = Field(default=20.0, ge=0.01, le=2000.0)
+    release_ms: float = Field(default=350.0, ge=0.01, le=9000.0)
+    makeup: float = Field(default=1.0, ge=1.0, le=64.0)
+
+
 class ClipTransform(BaseModel):
     scale: float = Field(default=1.0, gt=0.01, le=10.0)
     position_x: float = 0.0
@@ -59,6 +70,7 @@ class Clip(BaseModel):
     transform: ClipTransform = Field(default_factory=ClipTransform)
     transition_in: ClipTransition | None = None
     transition_out: ClipTransition | None = None
+    ducking: AudioDucking | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
