@@ -13,7 +13,7 @@ from db.mongo import get_db
 from models.job import JobType
 from models.render_plan import RenderPlan
 from services import job_service
-from services.render_executor import RenderExecutionError, execute
+from services.render_executor import execute
 from services.storage import get_storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
@@ -43,6 +43,7 @@ async def process_one() -> bool:
             output = Path(tmp) / "output.mp4"
             result = execute(plan, output)
             await job_service.set_progress(job["id"], 85)
+
             storage_key = (
                 f"users/{job['user_id']}/exports/{job['project_id']}/"
                 f"{export_id}.mp4"
@@ -51,6 +52,11 @@ async def process_one() -> bool:
                 storage_key, output, content_type="video/mp4"
             )
 
+        duration_sec = (
+            plan.duration_ticks
+            * plan.timebase_denominator
+            / plan.timebase_numerator
+        )
         now = utc_now()
         await db.exports.update_one(
             {"id": export_id},
@@ -58,16 +64,23 @@ async def process_one() -> bool:
                 "$set": {
                     "status": "completed",
                     "storage_key": storage_key,
+                    "duration_sec": duration_sec,
                     "updated_at": now,
                 }
             },
         )
         await job_service.succeed(
-            job["id"], {"export_id": export_id, "storage_key": storage_key, **result}
+            job["id"],
+            {
+                "export_id": export_id,
+                "storage_key": storage_key,
+                "duration_sec": duration_sec,
+                **result,
+            },
         )
         return True
 
-    except (RenderExecutionError, Exception) as exc:
+    except Exception as exc:
         final = job["attempt"] >= job["max_attempts"]
         await job_service.fail(job, code="render.failed", message=str(exc))
         if export_id:
@@ -86,6 +99,7 @@ async def process_one() -> bool:
 
 async def run_forever() -> None:
     from core.config import settings
+
     while True:
         did_work = await process_one()
         if not did_work:
