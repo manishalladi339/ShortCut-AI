@@ -12,7 +12,9 @@ Processed asset
   -> scene-change detection
   -> normalized word/segment timeline
   -> semantic units
-  -> later: embeddings, retrieval, diarization, highlights and edit planning
+  -> embeddings
+  -> project-scoped semantic retrieval
+  -> later: diarization, highlights, narrative analysis and edit planning
 ```
 
 ## Current implementation
@@ -25,21 +27,48 @@ Processed asset
 - word and segment timestamp normalization
 - deterministic FFmpeg scene-change detection
 - retrieval-ready semantic units that preserve original transcript wording
+- OpenAI-compatible embedding provider
+- batched semantic-unit embeddings
+- project-scoped cosine-similarity retrieval
 - persisted analysis document and job metrics
+
+The default embedding model is `text-embedding-3-small`, configurable through
+`EMBEDDING_MODEL`. Embedding vectors are stored separately from the public
+semantic-unit payload so normal API responses do not return large raw vectors.
+
+## Retrieval
+
+`POST /api/v1/projects/{project_id}/intelligence/search`
+
+The query is embedded with the same model used for analyzed units. Results return:
+- source asset
+- intelligence record
+- unit index
+- time range
+- transcript text
+- cosine-similarity score
+
+This gives the later AI planner a grounded way to locate moments such as
+"the part where the guest explains the pricing problem" across project media.
 
 ## Provider boundary
 
-Transcription is behind a provider protocol. The current production adapter uses
-an OpenAI-compatible audio transcription REST endpoint. API keys are supplied only
-through environment variables and are never committed.
+Transcription and embeddings are behind provider interfaces. Current production
+adapters use OpenAI-compatible REST endpoints. API keys are supplied only through
+environment variables and are never committed.
+
+OpenAI's embeddings API supports arrays of input strings, so semantic units are
+embedded in batches rather than one request per unit.
 
 ## Important limitations
 
-Diarization is not yet implemented. The schema already carries optional
-`speaker` fields so a diarization provider can enrich words/segments later.
+Speaker diarization is not yet implemented. The schema already carries optional
+`speaker` fields so a diarization stage can enrich words and segments without
+breaking the data model.
 
-Semantic units are deterministic transcript chunks, not LLM-written summaries.
-This avoids injecting hallucinated meaning before the evaluation layer exists.
+Semantic units remain deterministic transcript chunks, not LLM-written summaries.
+Retrieval therefore grounds later reasoning in the original transcript rather than
+a model-generated rewrite.
 
-Embeddings, vector retrieval, highlight ranking and AI edit planning are the next
-milestones.
+Highlight ranking, narrative/audience analysis and the structured AI edit planner
+are the next milestones.
