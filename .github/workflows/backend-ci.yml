@@ -38,7 +38,7 @@ jobs:
           exit 1
 
       - name: Install integration-test client dependencies
-        run: python -m pip install pytest requests pydantic httpx
+        run: python -m pip install pytest requests pydantic httpx python-dotenv
 
       - name: Run API integration tests
         env:
