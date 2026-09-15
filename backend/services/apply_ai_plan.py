@@ -93,7 +93,11 @@ async def apply_plan(
     asset_ids = {
         operation["payload"]["asset_id"]
         for operation in selected_operations
-        if operation.get("operation") in {"add_clip", "add_broll_overlay"}
+        if operation.get("operation") in {
+            "add_clip",
+            "add_broll_overlay",
+            "add_music_bed",
+        }
     }
     assets = {}
     if asset_ids:
@@ -123,7 +127,12 @@ async def apply_plan(
     touched_video_tracks: set[tuple[str, str]] = set()
     for operation in selected_operations:
         operation_type = operation.get("operation")
-        if operation_type not in {"add_clip", "add_broll_overlay", "add_caption"}:
+        if operation_type not in {
+            "add_clip",
+            "add_broll_overlay",
+            "add_music_bed",
+            "add_caption",
+        }:
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -168,7 +177,12 @@ async def apply_plan(
             ),
             None,
         )
-        expected_kind = "overlay" if operation_type == "add_broll_overlay" else "video"
+        if operation_type == "add_broll_overlay":
+            expected_kind = "overlay"
+        elif operation_type == "add_music_bed":
+            expected_kind = "audio"
+        else:
+            expected_kind = "video"
         if not track or track["kind"] != expected_kind:
             raise HTTPException(
                 status_code=422,
@@ -207,18 +221,41 @@ async def apply_plan(
                     for cue in sequence.get("captions", [])
                     if not cue.get("style", {}).get("ai_plan_id")
                 ]
-                for overlay in sequence.get("tracks", []):
-                    if overlay.get("kind") == "overlay":
-                        overlay["clips"] = [
+                for related_track in sequence.get("tracks", []):
+                    if related_track.get("kind") == "overlay":
+                        related_track["clips"] = [
                             clip
-                            for clip in overlay.get("clips", [])
+                            for clip in related_track.get("clips", [])
                             if not clip.get("metadata", {}).get("ai_plan_id")
+                        ]
+                    elif related_track.get("kind") == "audio":
+                        related_track["clips"] = [
+                            clip
+                            for clip in related_track.get("clips", [])
+                            if not (
+                                clip.get("metadata", {}).get("ai_plan_id")
+                                and clip.get("metadata", {}).get("music_bed")
+                            )
                         ]
             touched_video_tracks.add(key)
 
         asset = assets[payload["asset_id"]]
-        if asset["kind"] not in {"video", "image"}:
-            raise HTTPException(status_code=422, detail="Plan source is not a visual asset")
+        if operation_type == "add_music_bed":
+            if asset["kind"] != "audio":
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": {
+                            "code": "planner.music_asset_not_audio",
+                            "message": "Music-bed source must be an audio asset",
+                        }
+                    },
+                )
+        elif asset["kind"] not in {"video", "image"}:
+            raise HTTPException(
+                status_code=422,
+                detail="Plan source is not a visual asset",
+            )
 
         source_start = int(payload.get("source_start", 0))
         source_duration = int(payload["source_duration"])
