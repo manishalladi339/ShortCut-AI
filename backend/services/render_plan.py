@@ -93,6 +93,8 @@ async def compile_render_plan(
                 source_duration=clip["source_duration"],
                 playback_rate=clip["playback_rate"],
                 volume=clip["volume"],
+                transition_in=clip.get("transition_in"),
+                transition_out=clip.get("transition_out"),
                 metadata=metadata,
             )
             render_clips.append(render_clip)
