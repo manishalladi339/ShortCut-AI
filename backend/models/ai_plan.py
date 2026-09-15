@@ -35,6 +35,7 @@ class BrollRecommendation(BaseModel):
 
 
 class ProposedEditOperation(BaseModel):
+    id: str | None = None
     operation: str
     payload: dict[str, Any]
     reason: str
@@ -62,11 +63,18 @@ class AIEditPlanOut(BaseModel):
     updated_at: datetime
     applied_project_state_version: int | None = None
     feedback_outcome: str | None = None
+    applied_operation_ids: list[str] = Field(default_factory=list)
+    skipped_operation_ids: list[str] = Field(default_factory=list)
 
 
 class ApplyAIEditPlanRequest(BaseModel):
     expected_version: int = Field(ge=1)
     replace_existing_video_clips: bool = False
+    operation_ids: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
 
 
 class CreateAIEditPlanRequest(BaseModel):
