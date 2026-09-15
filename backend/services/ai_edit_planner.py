@@ -7,7 +7,7 @@ from core.config import settings
 from core.security import utc_now
 from db.mongo import get_db
 from models.ai_plan import CreateAIEditPlanRequest
-from services.broll_planning import build_visual_candidates, recommend_broll_for_highlight
+from services.broll_planning import bounded_broll_source_range, build_visual_candidates, recommend_broll_for_highlight
 from services.embeddings import get_embedding_provider
 from services.highlight_scoring import combine_scores, heuristic_highlight_score, select_non_overlapping
 from services.narrative_planning import structure_narrative
@@ -17,23 +17,6 @@ from services.semantic_search import cosine_similarity
 
 def _candidate_key(item: dict) -> str:
     return f"{item['asset_id']}:{item['unit_index']}"
-
-
-def _bounded_broll_source_range(
-    *,
-    observation_time_sec: float,
-    asset_duration_sec: float,
-    target_duration_ticks: int,
-    ticks_per_second: float,
-) -> tuple[int, int] | None:
-    """Center a B-roll source range on visual evidence without exceeding media bounds."""
-    source_duration_ticks = round(asset_duration_sec * ticks_per_second)
-    if source_duration_ticks <= 0 or target_duration_ticks <= 0:
-        return None
-    duration = min(target_duration_ticks, source_duration_ticks)
-    centered_start = round(observation_time_sec * ticks_per_second) - duration // 2
-    start = min(max(0, centered_start), max(0, source_duration_ticks - duration))
-    return start, duration
 
 
 def _nearest_visual(record: dict, start: float, end: float) -> dict | None:
@@ -109,7 +92,7 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
         if overlay_track and broll:
             best = broll[0]
             broll_asset = assets.get(best["asset_id"])
-            source_range = _bounded_broll_source_range(
+            source_range = bounded_broll_source_range(
                 observation_time_sec=float(best["time"]),
                 asset_duration_sec=float((broll_asset or {}).get("duration_sec") or 0.0),
                 target_duration_ticks=min(
