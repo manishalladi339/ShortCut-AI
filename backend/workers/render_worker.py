@@ -13,6 +13,7 @@ from db.mongo import get_db
 from models.job import JobType
 from models.render_plan import RenderPlan
 from services import job_service
+from services.media_probe import probe
 from services.render_executor import execute
 from services.storage import get_storage
 
@@ -42,7 +43,33 @@ async def process_one() -> bool:
         with TemporaryDirectory(prefix="shortcut-export-") as tmp:
             output = Path(tmp) / "output.mp4"
             result = execute(plan, output)
-            await job_service.set_progress(job["id"], 85)
+            await job_service.set_progress(job["id"], 75)
+
+            metadata = probe(output)
+            expected_duration = (
+                plan.duration_ticks
+                * plan.timebase_denominator
+                / plan.timebase_numerator
+            )
+            actual_duration = float(metadata.get("duration_sec") or 0.0)
+            if actual_duration <= 0:
+                raise RuntimeError("render QC failed: output duration is missing")
+            tolerance = max(0.35, expected_duration * 0.03)
+            if abs(actual_duration - expected_duration) > tolerance:
+                raise RuntimeError(
+                    "render QC failed: duration mismatch "
+                    f"(expected {expected_duration:.3f}s, got {actual_duration:.3f}s)"
+                )
+            if metadata.get("width") != plan.width or metadata.get("height") != plan.height:
+                raise RuntimeError(
+                    "render QC failed: frame size mismatch "
+                    f"(expected {plan.width}x{plan.height}, "
+                    f"got {metadata.get('width')}x{metadata.get('height')})"
+                )
+            if not metadata.get("video_codec"):
+                raise RuntimeError("render QC failed: output has no video stream")
+
+            await job_service.set_progress(job["id"], 90)
 
             storage_key = (
                 f"users/{job['user_id']}/exports/{job['project_id']}/"
@@ -52,11 +79,7 @@ async def process_one() -> bool:
                 storage_key, output, content_type="video/mp4"
             )
 
-        duration_sec = (
-            plan.duration_ticks
-            * plan.timebase_denominator
-            / plan.timebase_numerator
-        )
+        duration_sec = float(metadata.get("duration_sec") or result["duration_sec"])
         now = utc_now()
         await db.exports.update_one(
             {"id": export_id},
@@ -65,6 +88,7 @@ async def process_one() -> bool:
                     "status": "completed",
                     "storage_key": storage_key,
                     "duration_sec": duration_sec,
+                    "render_metadata": metadata,
                     "updated_at": now,
                 }
             },
@@ -75,6 +99,7 @@ async def process_one() -> bool:
                 "export_id": export_id,
                 "storage_key": storage_key,
                 "duration_sec": duration_sec,
+                "render_metadata": metadata,
                 **result,
             },
         )
