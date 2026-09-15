@@ -1,4 +1,4 @@
-"""Semantic retrieval API schemas."""
+"""Semantic and visual retrieval API schemas."""
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
@@ -24,3 +24,21 @@ class SemanticSearchOut(BaseModel):
     query: str
     model: str
     hits: list[SemanticSearchHit]
+
+
+class VisualSearchHit(BaseModel):
+    relevance_score: float
+    asset_id: str
+    intelligence_id: str
+    observation_index: int
+    time: float
+    description: str
+    shot_type: str = "unknown"
+    visible_objects: list[str] = Field(default_factory=list)
+    text_on_screen: str | None = None
+
+
+class VisualSearchOut(BaseModel):
+    query: str
+    model: str
+    hits: list[VisualSearchHit]
