@@ -1,7 +1,6 @@
 """Object-storage abstraction with local and S3 backends."""
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from datetime import timedelta
@@ -10,6 +9,7 @@ from tempfile import TemporaryDirectory
 from typing import Iterator
 
 import boto3
+from botocore.exceptions import ClientError
 
 from core.config import settings
 from core.security import utc_now
@@ -45,7 +45,8 @@ class StorageBackend(ABC):
     @abstractmethod
     def download_to(self, key: str, destination: Path) -> None: ...
 
-    def _build_key(self, user_id: str, kind: str, asset_id: str, ext: str) -> str:
+    @staticmethod
+    def _build_key(user_id: str, kind: str, asset_id: str, ext: str) -> str:
         safe_ext = ext.lstrip(".").lower() or "bin"
         return f"users/{user_id}/uploads/{kind}/{asset_id}.{safe_ext}"
 
@@ -53,16 +54,20 @@ class StorageBackend(ABC):
 class LocalStorage(StorageBackend):
     def __init__(self) -> None:
         self.bucket = "shortcut-local"
-        self.root = Path(settings.STUB_STORAGE_DIR)
+        self.root = Path(settings.STUB_STORAGE_DIR).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
 
     def build_key(self, user_id: str, kind: str, asset_id: str, ext: str) -> str:
         return self._build_key(user_id, kind, asset_id, ext)
 
     def local_path(self, key: str) -> Path:
-        if ".." in Path(key).parts:
+        candidate_key = Path(key)
+        if candidate_key.is_absolute() or ".." in candidate_key.parts:
             raise ValueError("invalid object key")
-        return self.root / key
+        candidate = (self.root / candidate_key).resolve()
+        if self.root != candidate and self.root not in candidate.parents:
+            raise ValueError("object key escapes storage root")
+        return candidate
 
     def presign_upload(self, key: str, ttl_seconds: int = 3600) -> tuple[str, dict, str]:
         self.local_path(key).parent.mkdir(parents=True, exist_ok=True)
@@ -122,9 +127,11 @@ class S3Storage(StorageBackend):
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=ttl_seconds,
         )
-        return url, {"Content-Type": "application/octet-stream"}, (
-            utc_now() + timedelta(seconds=ttl_seconds)
-        ).isoformat()
+        return (
+            url,
+            {"Content-Type": "application/octet-stream"},
+            (utc_now() + timedelta(seconds=ttl_seconds)).isoformat(),
+        )
 
     def presign_download(self, key: str, ttl_seconds: int = 3600) -> str:
         return self.client.generate_presigned_url(
@@ -137,8 +144,11 @@ class S3Storage(StorageBackend):
         try:
             self.client.head_object(Bucket=self.bucket, Key=key)
             return True
-        except Exception:
-            return False
+        except ClientError as exc:
+            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if status == 404:
+                return False
+            raise
 
     def size(self, key: str) -> int:
         response = self.client.head_object(Bucket=self.bucket, Key=key)
@@ -180,6 +190,7 @@ def materialize(key: str, suffix: str = "") -> Iterator[Path]:
     if isinstance(storage, LocalStorage):
         yield storage.local_path(key)
         return
+
     with TemporaryDirectory(prefix="shortcut-media-") as temp_dir:
         destination = Path(temp_dir) / f"asset{suffix}"
         storage.download_to(key, destination)
