@@ -31,6 +31,22 @@ def _max_speaker_run(candidates: list[dict]) -> int:
     return maximum
 
 
+def _transitions_valid(payload: dict) -> bool:
+    duration = int(payload.get("duration") or 0)
+    for field in ("transition_in", "transition_out"):
+        transition = payload.get(field)
+        if transition is None:
+            continue
+        transition_duration = int(transition.get("duration") or 0)
+        if (
+            transition.get("kind") != "fade"
+            or transition_duration <= 0
+            or transition_duration > duration
+        ):
+            return False
+    return True
+
+
 def evaluate_plan(plan: dict) -> dict:
     candidates = plan.get("candidates") or []
     operations = plan.get("operations") or []
@@ -86,6 +102,7 @@ def evaluate_plan(plan: dict) -> dict:
             )
             if key not in candidate_keys:
                 grounded = False
+
         elif operation_type == "add_broll_overlay":
             if (
                 not payload.get("asset_id")
@@ -93,18 +110,24 @@ def evaluate_plan(plan: dict) -> dict:
                 or metadata.get("source_observation_index") is None
             ):
                 grounded = False
-            duration = int(payload.get("duration") or 0)
-            for field in ("transition_in", "transition_out"):
-                transition = payload.get(field)
-                if transition is None:
-                    continue
-                transition_duration = int(transition.get("duration") or 0)
-                if (
-                    transition.get("kind") != "fade"
-                    or transition_duration <= 0
-                    or transition_duration > duration
-                ):
-                    transitions_valid = False
+            transitions_valid = (
+                transitions_valid and _transitions_valid(payload)
+            )
+
+        elif operation_type == "add_music_bed":
+            if (
+                not payload.get("asset_id")
+                or not metadata.get("music_bed")
+                or not metadata.get("user_selected_music")
+            ):
+                grounded = False
+            volume = float(payload.get("volume", -1.0))
+            if volume < 0.0 or volume > 1.0:
+                grounded = False
+            transitions_valid = (
+                transitions_valid and _transitions_valid(payload)
+            )
+
         elif operation_type == "add_caption":
             style = payload.get("style") or {}
             if style.get("source") != "transcript":
@@ -132,6 +155,11 @@ def evaluate_plan(plan: dict) -> dict:
         and (operation.get("payload") or {}).get("transition_in")
         and (operation.get("payload") or {}).get("transition_out")
     )
+    music_bed_count = sum(
+        1
+        for operation in operations
+        if operation.get("operation") == "add_music_bed"
+    )
 
     return {
         "operation_count": len(operations),
@@ -140,6 +168,7 @@ def evaluate_plan(plan: dict) -> dict:
         "primary_clip_part_count": primary_clip_part_count,
         "rhythm_snapped_overlay_count": rhythm_snapped_overlay_count,
         "faded_overlay_count": faded_overlay_count,
+        "music_bed_count": music_bed_count,
         "transitions_valid": transitions_valid,
         "average_highlight_score": (
             round(sum(scores) / len(scores), 4)
