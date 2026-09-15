@@ -11,6 +11,7 @@ from core.deps import get_current_user
 from core.security import utc_now
 from db.mongo import get_db
 from models.project_state import (
+    CaptionCue,
     Clip,
     ClipTransform,
     EditOperation,
@@ -327,6 +328,44 @@ def _apply_operation(state: dict, edit: EditOperation) -> dict:
             Clip(**clip)
         except ValidationError as exc:
             raise _error("edit.invalid_clip", str(exc)) from exc
+
+    elif op in {"add_caption", "update_caption", "remove_caption"}:
+        sequence = _find_sequence(next_state, str(p.get("sequence_id", "")))
+        if op == "add_caption":
+            try:
+                cue = CaptionCue(
+                    id=str(p.get("caption_id") or uuid.uuid4()),
+                    start=int(p["start"]),
+                    duration=int(p["duration"]),
+                    text=str(p["text"]),
+                    style=p.get("style", {}),
+                )
+            except (KeyError, TypeError, ValueError, ValidationError) as exc:
+                raise _error("edit.invalid_caption", str(exc)) from exc
+            sequence["captions"].append(cue.model_dump(mode="json"))
+
+        else:
+            caption_id = str(p.get("caption_id", ""))
+            cue = next(
+                (item for item in sequence.get("captions", []) if item["id"] == caption_id),
+                None,
+            )
+            if not cue:
+                raise _error("edit.caption_not_found", "Caption not found")
+            if op == "remove_caption":
+                sequence["captions"] = [
+                    item for item in sequence["captions"] if item["id"] != caption_id
+                ]
+            else:
+                for field in ("start", "duration", "text"):
+                    if field in p:
+                        cue[field] = p[field]
+                if "style" in p:
+                    cue["style"] = {**cue.get("style", {}), **p["style"]}
+                try:
+                    CaptionCue(**cue)
+                except ValidationError as exc:
+                    raise _error("edit.invalid_caption", str(exc)) from exc
 
     elif op == "set_track_properties":
         sequence = _find_sequence(next_state, str(p.get("sequence_id", "")))
