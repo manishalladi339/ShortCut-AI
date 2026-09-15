@@ -214,3 +214,65 @@ def test_version_history_and_restore(api_url, session, fresh_user):
         json={"expected_version": 2},
     )
     assert stale_restore.status_code == 409
+
+
+def test_caption_operations_are_versioned(api_url, session, fresh_user):
+    headers = fresh_user["auth_headers"]
+    project = session.post(
+        f"{api_url}/projects", json=_project_payload(), headers=headers
+    ).json()
+    state = session.get(
+        f"{api_url}/projects/{project['id']}/state", headers=headers
+    ).json()
+    sequence_id = state["active_sequence_id"]
+
+    added = session.post(
+        f"{api_url}/projects/{project['id']}/operations",
+        headers=headers,
+        json={
+            "expected_version": state["version"],
+            "operation": "add_caption",
+            "payload": {
+                "sequence_id": sequence_id,
+                "start": 1000,
+                "duration": 2500,
+                "text": "The hook starts here",
+            },
+        },
+    )
+    assert added.status_code == 200, added.text
+    state = added.json()
+    assert len(state["sequences"][0]["captions"]) == 1
+    cue = state["sequences"][0]["captions"][0]
+
+    updated = session.post(
+        f"{api_url}/projects/{project['id']}/operations",
+        headers=headers,
+        json={
+            "expected_version": state["version"],
+            "operation": "update_caption",
+            "payload": {
+                "sequence_id": sequence_id,
+                "caption_id": cue["id"],
+                "text": "Updated hook",
+            },
+        },
+    )
+    assert updated.status_code == 200
+    state = updated.json()
+    assert state["sequences"][0]["captions"][0]["text"] == "Updated hook"
+
+    removed = session.post(
+        f"{api_url}/projects/{project['id']}/operations",
+        headers=headers,
+        json={
+            "expected_version": state["version"],
+            "operation": "remove_caption",
+            "payload": {
+                "sequence_id": sequence_id,
+                "caption_id": cue["id"],
+            },
+        },
+    )
+    assert removed.status_code == 200
+    assert removed.json()["sequences"][0]["captions"] == []
