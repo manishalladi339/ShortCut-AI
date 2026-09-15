@@ -125,6 +125,20 @@ async def attach_looping_music_bed(
 
     available_source_ticks = asset_duration_ticks - source_start
     loop_source = output_duration > available_source_ticks
+    if loop_source and source_start != 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": {
+                    "code": "planner.music_loop_requires_zero_offset",
+                    "message": (
+                        "Looping currently repeats the complete source file; "
+                        "set music_source_start_sec to 0 for exact loop semantics"
+                    ),
+                }
+            },
+        )
+
     fade_ticks, fade_metadata = bounded_fade_ticks(
         clip_duration_ticks=output_duration,
         ticks_per_second=ticks_per_second,
@@ -168,7 +182,7 @@ async def attach_looping_music_bed(
             "reason": (
                 "User-selected music bed fitted to the complete planned output "
                 + (
-                    "by deterministic source repetition"
+                    "by deterministic full-source repetition"
                     if loop_source
                     else "without repetition because the source is long enough"
                 )
