@@ -21,6 +21,14 @@ class Timebase(BaseModel):
     denominator: int = Field(default=1, gt=0)
 
 
+class ClipTransform(BaseModel):
+    scale: float = Field(default=1.0, gt=0.01, le=10.0)
+    position_x: float = 0.0
+    position_y: float = 0.0
+    rotation_deg: float = Field(default=0.0, ge=-3600.0, le=3600.0)
+    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 class Clip(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     asset_id: str = Field(min_length=1, max_length=120)
@@ -31,13 +39,8 @@ class Clip(BaseModel):
     enabled: bool = True
     volume: float = Field(default=1.0, ge=0.0, le=4.0)
     playback_rate: float = Field(default=1.0, gt=0.05, le=8.0)
+    transform: ClipTransform = Field(default_factory=ClipTransform)
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def source_range_is_valid(self) -> "Clip":
-        if self.source_duration <= 0:
-            raise ValueError("source_duration must be positive")
-        return self
 
 
 class Track(BaseModel):
@@ -65,9 +68,9 @@ class Sequence(BaseModel):
     tracks: list[Track] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def track_ids_unique(self) -> "Sequence":
-        ids = [track.id for track in self.tracks]
-        if len(ids) != len(set(ids)):
+    def ids_unique(self) -> "Sequence":
+        track_ids = [track.id for track in self.tracks]
+        if len(track_ids) != len(set(track_ids)):
             raise ValueError("track ids must be unique within a sequence")
         clip_ids = [clip.id for track in self.tracks for clip in track.clips]
         if len(clip_ids) != len(set(clip_ids)):
@@ -108,9 +111,16 @@ class EditOperation(BaseModel):
         "set_active_sequence",
         "rename_sequence",
         "add_track",
+        "remove_track",
+        "add_clip",
         "remove_clip",
+        "ripple_delete",
+        "duplicate_clip",
+        "split_clip",
         "move_clip",
         "trim_clip",
+        "set_clip_properties",
+        "set_track_properties",
     ]
     payload: dict[str, Any]
 
