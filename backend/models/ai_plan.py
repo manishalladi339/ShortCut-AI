@@ -1,9 +1,7 @@
 """Schemas for auditable AI edit-plan proposals."""
 from __future__ import annotations
-
 from datetime import datetime
 from typing import Any
-
 from pydantic import BaseModel, Field
 
 
@@ -19,6 +17,15 @@ class HighlightCandidate(BaseModel):
     final_score: float = Field(ge=0, le=1)
     reasons: list[str] = Field(default_factory=list)
     narrative_role: str | None = None
+    visual_context: dict[str, Any] | None = None
+
+
+class BrollRecommendation(BaseModel):
+    for_asset_id: str
+    for_unit_index: int = Field(ge=0)
+    timeline_start: int = Field(ge=0)
+    duration: int = Field(gt=0)
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ProposedEditOperation(BaseModel):
@@ -37,6 +44,7 @@ class AIEditPlanOut(BaseModel):
     target_duration_sec: float = Field(gt=0)
     candidates: list[HighlightCandidate] = Field(default_factory=list)
     operations: list[ProposedEditOperation] = Field(default_factory=list)
+    broll_recommendations: list[BrollRecommendation] = Field(default_factory=list)
     audience_profile: dict[str, Any] = Field(default_factory=dict)
     narrative_summary: str = ""
     caption_suggestion: str = ""
