@@ -26,7 +26,13 @@ services:
       MEDIA_PROBE_TIMEOUT_SEC: "30"
       MEDIA_DERIVATIVE_TIMEOUT_SEC: "180"
       RENDER_TIMEOUT_SEC: "900"
+      MEDIA_INTELLIGENCE_TIMEOUT_SEC: "900"
+      SCENE_DETECTION_THRESHOLD: "0.35"
       WORKER_POLL_INTERVAL_SEC: "1.0"
+      TRANSCRIPTION_PROVIDER: openai
+      TRANSCRIPTION_MODEL: whisper-1
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.openai.com/v1}
     ports:
       - "8001:8001"
     volumes:
@@ -52,6 +58,18 @@ services:
       context: ./backend
     restart: unless-stopped
     command: ["python", "-m", "workers.render_worker"]
+    environment: *backend-env
+    volumes:
+      - shortcut-storage:/data/storage
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  intelligence-worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "workers.intelligence_worker"]
     environment: *backend-env
     volumes:
       - shortcut-storage:/data/storage
