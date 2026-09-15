@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 class JobType(str, Enum):
     media_probe = "media_probe"
+    render_export = "render_export"
 
 
 class JobStatus(str, Enum):
