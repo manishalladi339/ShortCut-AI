@@ -5,6 +5,7 @@ This executor supports:
 - overlapping visual clips via ordered compositing
 - clip transforms: scale, position, rotation, opacity
 - source audio plus standalone audio-track mixing
+- deterministic speech-responsive music ducking via sidechain compression
 - playback-rate and volume changes
 - timeline gaps
 - caption burn-in
@@ -63,6 +64,35 @@ def _transition_seconds(
     if duration <= 0 or duration > clip_duration_sec + 1e-6:
         raise RenderExecutionError("transition duration must fit inside the clip")
     return duration
+
+
+def _is_speech_sidechain_source(clip) -> bool:
+    """Return whether this clip should drive music ducking.
+
+    Create For Me speech normally comes from the primary video track. Explicit
+    voiceover/speech metadata allows future standalone narration to opt in
+    without treating sound effects or unrelated audio tracks as speech.
+    """
+    if clip.volume <= 0:
+        return False
+    if clip.ducking and clip.ducking.enabled:
+        return False
+    if clip.track_kind == "video":
+        return bool(clip.metadata.get("_asset_audio_codec"))
+    return bool(
+        clip.metadata.get("speech_source")
+        or clip.metadata.get("voiceover")
+    )
+
+
+def _sidechain_options(ducking) -> str:
+    return (
+        f"threshold={ducking.threshold:.8f}:"
+        f"ratio={ducking.ratio:.8f}:"
+        f"attack={ducking.attack_ms:.6f}:"
+        f"release={ducking.release_ms:.6f}:"
+        f"makeup={ducking.makeup:.8f}"
+    )
 
 
 def _run(command: list[str]) -> None:
@@ -205,9 +235,6 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                 prepared = f"vprep{idx}"
                 rotation_radians = rotation * math.pi / 180.0
 
-                # Fades are evaluated before the clip is shifted onto the timeline.
-                # This keeps transition times clip-local: fade-in starts at zero and
-                # fade-out starts at target_duration - fade_out.
                 visual_filter = (
                     f"[{source_label}]"
                     f"trim=start={source_start:.6f}:duration={source_duration:.6f},"
@@ -259,7 +286,7 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                 )
                 current_video = out_label
 
-            audio_labels = ["1:a"]
+            prepared_audio: list[tuple[object, str]] = []
             for idx, clip in enumerate(audio_clips):
                 input_index = clip_input_index[clip.clip_id]
                 source_start = _ticks_to_seconds(
@@ -308,15 +335,69 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     )
                 audio_filter += (
                     f"volume={clip.volume:.8f},"
+                    "aresample=48000,"
+                    "aformat=sample_fmts=fltp:channel_layouts=stereo,"
                     f"adelay={delay_ms}|{delay_ms}"
                     f"[{label}]"
                 )
                 filters.append(audio_filter)
-                audio_labels.append(label)
+                prepared_audio.append((clip, label))
 
-            mix_inputs = "".join(f"[{label}]" for label in audio_labels)
+            ducked_audio = [
+                (clip, label)
+                for clip, label in prepared_audio
+                if clip.ducking and clip.ducking.enabled
+            ]
+            speech_audio = [
+                (clip, label)
+                for clip, label in prepared_audio
+                if _is_speech_sidechain_source(clip)
+            ]
+
+            final_audio_labels: list[str] = ["1:a"]
+            if ducked_audio and speech_audio:
+                speech_input_labels = "".join(
+                    f"[{label}]" for _, label in speech_audio
+                )
+                if len(speech_audio) == 1:
+                    speech_bus = speech_audio[0][1]
+                else:
+                    speech_bus = "speechbus"
+                    filters.append(
+                        f"{speech_input_labels}amix=inputs={len(speech_audio)}:"
+                        "duration=longest:normalize=0"
+                        f"[{speech_bus}]"
+                    )
+
+                split_outputs = ["speechfinal"] + [
+                    f"speechsc{index}" for index in range(len(ducked_audio))
+                ]
+                split_labels = "".join(f"[{label}]" for label in split_outputs)
+                filters.append(
+                    f"[{speech_bus}]asplit={len(split_outputs)}{split_labels}"
+                )
+                final_audio_labels.append("speechfinal")
+
+                speech_label_set = {label for _, label in speech_audio}
+                ducked_label_set = {label for _, label in ducked_audio}
+                for clip, label in prepared_audio:
+                    if label not in speech_label_set and label not in ducked_label_set:
+                        final_audio_labels.append(label)
+
+                for index, (clip, label) in enumerate(ducked_audio):
+                    ducked_label = f"duckedmusic{index}"
+                    filters.append(
+                        f"[{label}][speechsc{index}]"
+                        f"sidechaincompress={_sidechain_options(clip.ducking)}"
+                        f"[{ducked_label}]"
+                    )
+                    final_audio_labels.append(ducked_label)
+            else:
+                final_audio_labels.extend(label for _, label in prepared_audio)
+
+            mix_inputs = "".join(f"[{label}]" for label in final_audio_labels)
             filters.append(
-                f"{mix_inputs}amix=inputs={len(audio_labels)}:"
+                f"{mix_inputs}amix=inputs={len(final_audio_labels)}:"
                 f"duration=longest:normalize=0,"
                 f"atrim=duration={duration_sec:.6f},"
                 "aresample=48000[aout]"
@@ -389,5 +470,6 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
         "duration_sec": duration_sec,
         "visual_clip_count": len(visual_clips),
         "audio_source_count": len(audio_clips),
+        "ducked_audio_source_count": len(ducked_audio),
         "caption_count": len(plan.captions),
     }
