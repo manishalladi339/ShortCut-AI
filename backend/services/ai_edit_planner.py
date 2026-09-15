@@ -19,6 +19,23 @@ def _candidate_key(item: dict) -> str:
     return f"{item['asset_id']}:{item['unit_index']}"
 
 
+def _bounded_broll_source_range(
+    *,
+    observation_time_sec: float,
+    asset_duration_sec: float,
+    target_duration_ticks: int,
+    ticks_per_second: float,
+) -> tuple[int, int] | None:
+    """Center a B-roll source range on visual evidence without exceeding media bounds."""
+    source_duration_ticks = round(asset_duration_sec * ticks_per_second)
+    if source_duration_ticks <= 0 or target_duration_ticks <= 0:
+        return None
+    duration = min(target_duration_ticks, source_duration_ticks)
+    centered_start = round(observation_time_sec * ticks_per_second) - duration // 2
+    start = min(max(0, centered_start), max(0, source_duration_ticks - duration))
+    return start, duration
+
+
 def _nearest_visual(record: dict, start: float, end: float) -> dict | None:
     observations = record.get("visual_observations") or []
     if not observations:
@@ -92,21 +109,16 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
         if overlay_track and broll:
             best = broll[0]
             broll_asset = assets.get(best["asset_id"])
-            source_duration_sec = float((broll_asset or {}).get("duration_sec") or 0.0)
-            source_duration_ticks = round(source_duration_sec * ticks_per_second)
-            requested_broll_duration = min(
-                duration, max(1, round(3.0 * ticks_per_second))
+            source_range = _bounded_broll_source_range(
+                observation_time_sec=float(best["time"]),
+                asset_duration_sec=float((broll_asset or {}).get("duration_sec") or 0.0),
+                target_duration_ticks=min(
+                    duration, max(1, round(3.0 * ticks_per_second))
+                ),
+                ticks_per_second=ticks_per_second,
             )
-            if source_duration_ticks > 0:
-                broll_duration = min(requested_broll_duration, source_duration_ticks)
-                centered_start = (
-                    round(float(best["time"]) * ticks_per_second)
-                    - broll_duration // 2
-                )
-                broll_source_start = min(
-                    max(0, centered_start),
-                    max(0, source_duration_ticks - broll_duration),
-                )
+            if source_range:
+                broll_source_start, broll_duration = source_range
                 operations.append(
                     {
                         "operation": "add_broll_overlay",
