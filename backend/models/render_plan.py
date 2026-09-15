@@ -6,6 +6,14 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class RenderCaption(BaseModel):
+    id: str
+    start: int = Field(ge=0)
+    duration: int = Field(gt=0)
+    text: str
+    style: dict[str, Any] = Field(default_factory=dict)
+
+
 class RenderClip(BaseModel):
     clip_id: str
     track_id: str
@@ -31,3 +39,4 @@ class RenderPlan(BaseModel):
     timebase_denominator: int = Field(gt=0)
     duration_ticks: int = Field(ge=0)
     clips: list[RenderClip] = Field(default_factory=list)
+    captions: list[RenderCaption] = Field(default_factory=list)
