@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from core.security import utc_now
 from db.mongo import get_db
 from models.project_state import CaptionCue, Clip, ClipTransition, ProjectStateDocument
+from services.plan_review import PlanReviewError, select_reviewed_operations
 
 
 def _conflict(message: str, current_version: int) -> HTTPException:
@@ -35,6 +36,7 @@ async def apply_plan(
     user_id: str,
     expected_version: int,
     replace_existing_video_clips: bool,
+    operation_ids: list[str] | None = None,
 ) -> dict:
     db = get_db()
     state = await db.project_states.find_one(
@@ -69,10 +71,28 @@ async def apply_plan(
             },
         )
 
+    try:
+        selected_operations, applied_operation_ids, skipped_operation_ids = (
+            select_reviewed_operations(
+                plan.get("operations", []),
+                operation_ids,
+            )
+        )
+    except PlanReviewError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": {
+                    "code": exc.code,
+                    "message": exc.message,
+                }
+            },
+        ) from exc
+
     candidate = copy.deepcopy(state)
     asset_ids = {
         operation["payload"]["asset_id"]
-        for operation in plan.get("operations", [])
+        for operation in selected_operations
         if operation.get("operation") in {"add_clip", "add_broll_overlay"}
     }
     assets = {}
@@ -101,7 +121,7 @@ async def apply_plan(
         )
 
     touched_video_tracks: set[tuple[str, str]] = set()
-    for operation in plan.get("operations", []):
+    for operation in selected_operations:
         operation_type = operation.get("operation")
         if operation_type not in {"add_clip", "add_broll_overlay", "add_caption"}:
             raise HTTPException(
@@ -270,7 +290,9 @@ async def apply_plan(
             "operation": "apply_ai_plan",
             "payload": {
                 "ai_plan_id": plan["id"],
-                "operation_count": len(plan.get("operations", [])),
+                "operation_count": len(selected_operations),
+                "applied_operation_ids": applied_operation_ids,
+                "skipped_operation_ids": skipped_operation_ids,
                 "replace_existing_video_clips": replace_existing_video_clips,
             },
             "created_at": now,
@@ -289,6 +311,8 @@ async def apply_plan(
             "$set": {
                 "status": "applied",
                 "applied_project_state_version": candidate["version"],
+                "applied_operation_ids": applied_operation_ids,
+                "skipped_operation_ids": skipped_operation_ids,
                 "updated_at": now,
             }
         },
