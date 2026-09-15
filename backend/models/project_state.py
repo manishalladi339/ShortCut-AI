@@ -29,6 +29,14 @@ class ClipTransform(BaseModel):
     opacity: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
+class CaptionCue(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    start: int = Field(ge=0)
+    duration: int = Field(gt=0)
+    text: str = Field(min_length=1, max_length=500)
+    style: dict[str, Any] = Field(default_factory=dict)
+
+
 class Clip(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     asset_id: str = Field(min_length=1, max_length=120)
@@ -66,6 +74,7 @@ class Sequence(BaseModel):
     height: int = Field(default=1920, gt=0, le=8192)
     timebase: Timebase = Field(default_factory=Timebase)
     tracks: list[Track] = Field(default_factory=list)
+    captions: list[CaptionCue] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def ids_unique(self) -> "Sequence":
@@ -75,6 +84,9 @@ class Sequence(BaseModel):
         clip_ids = [clip.id for track in self.tracks for clip in track.clips]
         if len(clip_ids) != len(set(clip_ids)):
             raise ValueError("clip ids must be unique within a sequence")
+        caption_ids = [cue.id for cue in self.captions]
+        if len(caption_ids) != len(set(caption_ids)):
+            raise ValueError("caption ids must be unique within a sequence")
         return self
 
 
@@ -121,6 +133,9 @@ class EditOperation(BaseModel):
         "trim_clip",
         "set_clip_properties",
         "set_track_properties",
+        "add_caption",
+        "update_caption",
+        "remove_caption",
     ]
     payload: dict[str, Any]
 
