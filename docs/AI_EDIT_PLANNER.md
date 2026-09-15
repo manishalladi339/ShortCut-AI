@@ -17,60 +17,107 @@ candidate ranking
 non-overlapping clip selection
         |
         v
-ProposedEditOperation[]
+audience + narrative structuring
         |
         v
-human review / later approval layer
+hook / body / payoff roles
         |
         v
-validated EditOperation protocol
+grounded clip + caption proposals
+        |
+        v
+explicit apply transaction
+        |
+        v
+ProjectState -> renderer
 ```
 
-## Why proposals do not mutate the timeline directly
-
-ShortCut AI keeps model/intelligence decisions separate from application state.
-A planner can be wrong. A deterministic editing engine must still validate every
-asset, time range, track and ProjectState version.
-
-The first planner therefore stores **proposals**, not hidden mutations.
-
-A separate apply endpoint accepts an explicit `expected_version` and applies the
-selected clip operations in one atomic ProjectState replacement. Stale plans are
-rejected. Existing timeline clips are never replaced unless the caller explicitly
-sets `replace_existing_video_clips=true`.
-
-## Ranking baseline
+## Grounding and ranking
 
 Each semantic unit gets:
 - an auditable heuristic score based on duration, density, hook/question language,
   specificity and position
-- semantic relevance to the user's/project's objective through embeddings
+- semantic relevance to the project objective through embeddings
 - a combined score
 
-A greedy selector rejects overlapping source ranges and respects the requested
-target duration and maximum clip count.
+The selector rejects overlapping source ranges and respects target duration and
+maximum clip count. Scores are selection heuristics, **not virality predictions**.
 
-This baseline is intentionally measurable. Later narrative/LLM ranking can be
-compared against it instead of replacing it with an opaque score.
+## Narrative layer
 
-## Apply contract
+The planner now supports two narrative providers:
+
+- `deterministic` — default baseline with no extra LLM call
+- `openai` — optional OpenAI-compatible JSON narrative planner
+
+Both operate only on already-selected grounded candidate keys.
+
+The narrative layer produces:
+- audience profile
+- ordered candidate keys
+- hook/body/payoff role assignment
+- narrative summary
+- caption suggestion
+- CTA suggestion
+
+The final edit plan stores the provider/model used so plans remain auditable.
+
+## Grounded captions
+
+When `include_captions=true`, each selected transcript unit also produces an
+`add_caption` proposal aligned to its output timeline range. The caption text is
+copied from the grounded transcript unit rather than invented.
+
+## Why planning and applying are separate
+
+A planner can be wrong. ShortCut AI therefore stores a proposal first.
 
 `POST /api/v1/projects/{project_id}/ai-plans/{plan_id}/apply`
 
-Applying a plan:
+Application:
 - requires the exact ProjectState version the plan was created from
+- rejects stale plans
 - rechecks asset readiness and ownership
 - rechecks target track existence/lock state
-- applies all current planner operations as a single ProjectState version
-- writes edit history and an immutable snapshot
-- marks the plan applied only after state persistence succeeds
+- applies grounded clips and captions in one ProjectState replacement
+- writes edit history
+- writes an immutable snapshot
+- marks the plan applied only after persistence succeeds
 
-This keeps **Create For Me** auditable and prevents silent overwrites.
+Existing timeline clips are never replaced unless the caller explicitly sets
+`replace_existing_video_clips=true`.
 
-## Current limitation
+## Planner evaluation
 
-Selected clips are ordered by source chronology. Narrative re-ordering, hook/body/
-payoff roles, audience analysis and generated captions are the next planner layer.
+Every generated plan stores measurable baseline metrics:
+- selected duration
+- average highlight score
+- hook presence
+- payoff presence
+- grounding integrity
+- operation/candidate counts
 
-The API does **not** claim that the current baseline predicts virality. Scores are
-selection heuristics, not engagement guarantees.
+Users can also submit human feedback:
+
+`POST /api/v1/projects/{project_id}/ai-plans/{plan_id}/feedback`
+
+Supported outcomes:
+- accepted
+- modified
+- rejected
+
+Project-level feedback metrics expose acceptance rate and outcome counts. This is
+the beginning of a real evaluation dataset: later planner revisions can be
+compared against actual human acceptance rather than subjective demo quality.
+
+## Current limitations
+
+Still to build:
+- stronger narrative evaluation datasets
+- automatic comparison of deterministic vs LLM planner variants
+- speaker diarization-aware story construction
+- visual-semantic signals in ranking
+- B-roll planning
+- animated caption styling
+- music/beat-aware editing
+- creator preference learning
