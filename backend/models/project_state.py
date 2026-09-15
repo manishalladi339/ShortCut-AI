@@ -64,6 +64,7 @@ class Clip(BaseModel):
     duration: int = Field(gt=0)
     source_start: int = Field(default=0, ge=0)
     source_duration: int = Field(gt=0)
+    loop_source: bool = False
     enabled: bool = True
     volume: float = Field(default=1.0, ge=0.0, le=4.0)
     playback_rate: float = Field(default=1.0, gt=0.05, le=8.0)
