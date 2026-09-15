@@ -5,14 +5,14 @@ audio and can use nearby markers to time B-roll entrances.
 
 ## Important terminology
 
-This milestone does **not** claim full musical beat tracking or BPM estimation.
-
-The detector measures short-time waveform energy and identifies strong increases
-relative to a rolling local baseline. The resulting records are called
+The detector first measures short-time waveform energy and identifies strong
+increases relative to a rolling local baseline. These are persisted as
 `rhythm_events` or onset markers.
 
-This makes the signal useful for cuts and entrances while keeping the claim
-aligned with what the implementation actually measures.
+A second deterministic stage may estimate BPM and a regular beat grid, but only
+when at least several measured onset intervals fall inside the supported tempo
+range and pass a regularity-confidence threshold. Irregular material returns no
+beat grid rather than fabricating one.
 
 ## Detection
 
@@ -27,12 +27,19 @@ Configurable inputs include:
 - `RHYTHM_MIN_RMS`
 - `RHYTHM_MIN_INTERVAL_SEC`
 
-Each event stores:
+Each onset event stores:
 
 - source time
 - normalized strength
 - RMS energy
 - energy ratio against its local baseline
+
+When onset spacing is regular enough, `beat_grid` additionally stores:
+
+- estimated BPM
+- beat period
+- regularity confidence
+- deterministic beat timestamps across the observed onset range
 
 Rhythm analysis is optional evidence. If the WAV format or analysis fails, the
 rest of media intelligence continues.
@@ -48,7 +55,9 @@ Events that fall inside removed source regions are discarded automatically.
 ## B-roll entrance timing
 
 When `rhythm_snap_broll=true`, the planner looks forward from the planned
-B-roll entrance for a nearby mapped onset.
+B-roll entrance for a nearby timing marker. A confidence-gated beat grid is
+preferred when available; otherwise the planner falls back to measured energy
+onsets.
 
 The maximum forward movement is controlled by
 `rhythm_snap_window_sec` (default 0.35 seconds).
@@ -57,7 +66,8 @@ If a qualifying onset is found:
 
 1. the B-roll entrance moves to that output timeline tick;
 2. its duration is reduced if needed so it stays inside the selected highlight;
-3. the operation stores `rhythm_snapped`, the source onset time and strength;
+3. the operation stores `rhythm_snapped`, timing-signal type, source time,
+   strength, and BPM/confidence when a beat grid was used;
 4. planner evaluation counts the rhythm-snapped overlay.
 
 If no nearby onset exists, the original entrance time remains unchanged.
@@ -71,7 +81,7 @@ cannot invent an onset timestamp.
 ## Next
 
 - dedicated music-track analysis rather than only normalized program audio
-- tempo/BPM estimation with confidence
+- stronger tempo tracking for missing/subdivided beats
 - transition duration aligned to rhythmic structure
 - audio crossfades and visual transition primitives
 - creator-selectable pacing profiles
