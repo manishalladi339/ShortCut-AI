@@ -18,8 +18,9 @@ from db.mongo import close as close_mongo
 from db.mongo import get_db
 from models.job import JobType
 from services import job_service
+from services.media_derivatives import MediaDerivativeError, generate as generate_derivatives
 from services.media_probe import MediaProbeError, probe
-from services.storage import materialize
+from services.storage import get_storage, materialize
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("shortcut.media-worker")
@@ -57,6 +58,12 @@ async def process_one() -> bool:
         suffix = Path(asset["filename"]).suffix
         with materialize(asset["storage_key"], suffix=suffix) as local_path:
             metadata = probe(local_path)
+            await job_service.set_progress(job["id"], 45)
+            derivatives = generate_derivatives(
+                source_path=local_path,
+                asset=asset,
+                storage=get_storage(),
+            )
 
         await job_service.set_progress(job["id"], 80)
         await db.assets.update_one(
@@ -66,6 +73,7 @@ async def process_one() -> bool:
                     "processing_status": "ready",
                     "processing_job_id": job["id"],
                     "media_metadata": metadata,
+                    "derivatives": derivatives,
                     "duration_sec": metadata.get("duration_sec"),
                     "width": metadata.get("width"),
                     "height": metadata.get("height"),
@@ -73,11 +81,11 @@ async def process_one() -> bool:
                 }
             },
         )
-        await job_service.succeed(job["id"], metadata)
+        await job_service.succeed(job["id"], {"media_metadata": metadata, "derivatives": derivatives})
         logger.info("processed asset %s", asset["id"])
         return True
 
-    except MediaProbeError as exc:
+    except (MediaProbeError, MediaDerivativeError) as exc:
         final = job["attempt"] >= job["max_attempts"]
         await job_service.fail(job, code="media.probe_failed", message=str(exc))
         await _sync_asset_failure(job, final)
