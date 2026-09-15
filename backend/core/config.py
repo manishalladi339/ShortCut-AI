@@ -1,6 +1,7 @@
 """Backend configuration loaded from .env."""
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).parent.parent
@@ -16,9 +17,21 @@ class Settings:
     JWT_ACCESS_TTL_MIN: int = int(os.environ.get("JWT_ACCESS_TTL_MIN", "60"))
     JWT_REFRESH_TTL_DAYS: int = int(os.environ.get("JWT_REFRESH_TTL_DAYS", "30"))
 
-    S3_BACKEND: str = os.environ.get("S3_BACKEND", "stub")
-    STUB_STORAGE_DIR: str = os.environ.get("STUB_STORAGE_DIR", "/tmp/shortcut_storage")
     APP_PUBLIC_URL: str = os.environ.get("APP_PUBLIC_URL", "http://localhost:8001")
+
+    # Storage
+    STORAGE_BACKEND: str = os.environ.get(
+        "STORAGE_BACKEND", os.environ.get("S3_BACKEND", "local")
+    )
+    STUB_STORAGE_DIR: str = os.environ.get("STUB_STORAGE_DIR", "/tmp/shortcut_storage")
+    S3_BUCKET: str = os.environ.get("S3_BUCKET", "")
+    AWS_REGION: str = os.environ.get("AWS_REGION", "ap-south-1")
+    S3_ENDPOINT_URL: str = os.environ.get("S3_ENDPOINT_URL", "")
+
+    # Media workers
+    FFPROBE_PATH: str = os.environ.get("FFPROBE_PATH", "ffprobe")
+    MEDIA_PROBE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_PROBE_TIMEOUT_SEC", "30"))
+    WORKER_POLL_INTERVAL_SEC: float = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0"))
 
     EMERGENT_AUTH_SESSION_URL: str = os.environ.get(
         "EMERGENT_AUTH_SESSION_URL",
