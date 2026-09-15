@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.deps import get_current_user
 from db.mongo import get_db
-from models.ai_plan import AIEditPlanOut, CreateAIEditPlanRequest
+from models.ai_plan import AIEditPlanOut, ApplyAIEditPlanRequest, CreateAIEditPlanRequest
+from models.project_state import ProjectStateOut
 from services.ai_edit_planner import build_plan
+from services.apply_ai_plan import apply_plan
 
 router = APIRouter(prefix="/projects", tags=["ai-planner"])
 
@@ -88,3 +90,31 @@ async def get_ai_edit_plan(
             detail={"error": {"code": "planner.plan_not_found", "message": "AI edit plan not found"}},
         )
     return AIEditPlanOut(**doc)
+
+
+@router.post(
+    "/{project_id}/ai-plans/{plan_id}/apply",
+    response_model=ProjectStateOut,
+)
+async def apply_ai_edit_plan(
+    project_id: str,
+    plan_id: str,
+    body: ApplyAIEditPlanRequest,
+    user: dict = Depends(get_current_user),
+) -> ProjectStateOut:
+    plan = await get_db().ai_edit_plans.find_one(
+        {"id": plan_id, "project_id": project_id, "user_id": user["id"]},
+        {"_id": 0},
+    )
+    if not plan:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "planner.plan_not_found", "message": "AI edit plan not found"}},
+        )
+    state = await apply_plan(
+        plan=plan,
+        user_id=user["id"],
+        expected_version=body.expected_version,
+        replace_existing_video_clips=body.replace_existing_video_clips,
+    )
+    return ProjectStateOut(**state)
