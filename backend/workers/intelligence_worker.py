@@ -17,7 +17,7 @@ from services.broll_planning import visual_text
 from services.embeddings import get_embedding_provider
 from services.frame_sampler import extract_frames
 from services.scene_detection import detect_scenes
-from services.silence_detection import detect_silences
+from services.silence_detection import SilenceDetectionError, detect_silences
 from services.semantic_units import build_semantic_units
 from services.storage import materialize
 from services.transcription import get_transcription_provider
@@ -67,10 +67,18 @@ async def process_one() -> bool:
                 await job_service.set_progress(job["id"], 15)
                 extract_mono_16k(source, audio)
                 await job_service.set_progress(job["id"], 25)
-                silences = detect_silences(
-                    audio,
-                    duration_sec=asset.get("duration_sec"),
-                )
+                try:
+                    silences = detect_silences(
+                        audio,
+                        duration_sec=asset.get("duration_sec"),
+                    )
+                except SilenceDetectionError as exc:
+                    logger.warning(
+                        "silence detection skipped for asset %s: %s",
+                        asset["id"],
+                        exc,
+                    )
+                    silences = []
                 await job_service.set_progress(job["id"], 40)
                 transcript = await get_transcription_provider().transcribe(audio)
                 scenes, visual_observations = [], []
