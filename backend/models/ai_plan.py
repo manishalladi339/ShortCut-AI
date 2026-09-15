@@ -1,7 +1,7 @@
 """Schemas for auditable AI edit-plan proposals."""
 from __future__ import annotations
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -98,6 +98,7 @@ class CreateAIEditPlanRequest(BaseModel):
     music_source_start_sec: float = Field(default=0.0, ge=0.0, le=7200.0)
     music_volume: float = Field(default=0.12, ge=0.0, le=1.0)
     music_fade_sec: float = Field(default=0.75, ge=0.05, le=5.0)
+    music_fit_mode: Literal["require_full", "loop"] = "require_full"
     music_ducking: bool = True
     music_duck_threshold: float = Field(default=0.03, ge=0.00097563, le=1.0)
     music_duck_ratio: float = Field(default=8.0, ge=1.0, le=20.0)
