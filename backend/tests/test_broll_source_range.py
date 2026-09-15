@@ -1,9 +1,9 @@
 """Tests for bounded B-roll source ranges."""
-from services.ai_edit_planner import _bounded_broll_source_range
+from services.broll_planning import bounded_broll_source_range
 
 
 def test_broll_range_clamps_at_start():
-    assert _bounded_broll_source_range(
+    assert bounded_broll_source_range(
         observation_time_sec=0.2,
         asset_duration_sec=10.0,
         target_duration_ticks=3000,
@@ -12,7 +12,7 @@ def test_broll_range_clamps_at_start():
 
 
 def test_broll_range_clamps_at_end():
-    start, duration = _bounded_broll_source_range(
+    start, duration = bounded_broll_source_range(
         observation_time_sec=9.8,
         asset_duration_sec=10.0,
         target_duration_ticks=3000,
@@ -24,7 +24,7 @@ def test_broll_range_clamps_at_end():
 
 
 def test_broll_range_shortens_to_short_asset():
-    assert _bounded_broll_source_range(
+    assert bounded_broll_source_range(
         observation_time_sec=0.5,
         asset_duration_sec=1.0,
         target_duration_ticks=3000,
@@ -33,7 +33,7 @@ def test_broll_range_shortens_to_short_asset():
 
 
 def test_broll_range_rejects_unknown_duration():
-    assert _bounded_broll_source_range(
+    assert bounded_broll_source_range(
         observation_time_sec=1.0,
         asset_duration_sec=0.0,
         target_duration_ticks=3000,
