@@ -14,6 +14,7 @@ from services.narrative_planning import structure_narrative
 from services.planner_evaluation import evaluate_plan
 from services.semantic_search import cosine_similarity
 from services.silence_editing import snap_outward_to_silence
+from services.speaker_editing import normalize_speakers, primary_speaker, speaker_allowed
 
 
 def _candidate_key(item: dict) -> str:
@@ -50,6 +51,13 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
         for index, unit in enumerate(units):
             if index >= len(vectors):
                 continue
+            speakers = normalize_speakers(unit)
+            if not speaker_allowed(
+                speakers,
+                include=body.include_speakers,
+                exclude=body.exclude_speakers,
+            ):
+                continue
             refined_start, refined_end, silence_reasons = snap_outward_to_silence(
                 start=float(unit["start"]),
                 end=float(unit["end"]),
@@ -66,6 +74,8 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
                 asset_duration_sec=asset.get("duration_sec"),
             )
             reasons.extend(silence_reasons)
+            if speakers:
+                reasons.append("speaker-aware diarization context")
             relevance = cosine_similarity(query_vector, vectors[index])
             visual = _nearest_visual(record, refined_start, refined_end)
             visual_bonus = 0.0
@@ -75,7 +85,7 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
                 if visual.get("text_on_screen"):
                     visual_bonus += 0.015; reasons.append("nearby on-screen text")
             final = min(1.0, combine_scores(heuristic, relevance) + visual_bonus)
-            candidates.append({"asset_id": record["asset_id"], "intelligence_id": record["id"], "unit_index": index, "start": refined_start, "end": refined_end, "text": unit["text"], "heuristic_score": heuristic, "relevance_score": relevance, "final_score": final, "reasons": reasons + ["semantic relevance to objective"], "narrative_role": None, "visual_context": visual, "semantic_vector": vectors[index]})
+            candidates.append({"asset_id": record["asset_id"], "intelligence_id": record["id"], "unit_index": index, "start": refined_start, "end": refined_end, "text": unit["text"], "heuristic_score": heuristic, "relevance_score": relevance, "final_score": final, "reasons": reasons + ["semantic relevance to objective"], "narrative_role": None, "speakers": speakers, "primary_speaker": primary_speaker(speakers), "visual_context": visual, "semantic_vector": vectors[index]})
     chosen = select_non_overlapping(candidates, target_duration_sec=body.target_duration_sec, max_clips=body.max_clips, min_clip_sec=body.min_clip_sec, max_clip_sec=body.max_clip_sec)
     if not chosen:
         raise HTTPException(status_code=422, detail={"error": {"code": "planner.no_viable_highlights", "message": "No analyzed transcript units met the requested clip constraints"}})
@@ -105,7 +115,7 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
         broll = recommend_broll_for_highlight(highlight=candidate, visual_candidates=visual_candidates, highlight_vector=semantic_vector, limit=3)
         if broll:
             broll_recommendations.append({"for_asset_id": candidate["asset_id"], "for_unit_index": candidate["unit_index"], "timeline_start": timeline_cursor, "duration": duration, "candidates": broll})
-        operations.append({"operation": "add_clip", "payload": {"sequence_id": sequence["id"], "track_id": video_track["id"], "asset_id": candidate["asset_id"], "timeline_start": timeline_cursor, "duration": duration, "source_start": source_start, "source_duration": duration, "metadata": {"ai_plan": True, "source_intelligence_id": candidate["intelligence_id"], "source_unit_index": candidate["unit_index"], "highlight_score": candidate["final_score"], "narrative_role": role, "visual_context": candidate.get("visual_context")}}, "reason": f"{role.title()} clip selected from grounded multimodal evidence with score {candidate['final_score']:.3f}: {candidate['text'][:180]}"})
+        operations.append({"operation": "add_clip", "payload": {"sequence_id": sequence["id"], "track_id": video_track["id"], "asset_id": candidate["asset_id"], "timeline_start": timeline_cursor, "duration": duration, "source_start": source_start, "source_duration": duration, "metadata": {"ai_plan": True, "source_intelligence_id": candidate["intelligence_id"], "source_unit_index": candidate["unit_index"], "highlight_score": candidate["final_score"], "narrative_role": role, "speakers": candidate.get("speakers") or [], "primary_speaker": candidate.get("primary_speaker"), "visual_context": candidate.get("visual_context")}}, "reason": f"{role.title()} clip selected from grounded multimodal evidence with score {candidate['final_score']:.3f}: {candidate['text'][:180]}"})
         if overlay_track and broll:
             best = broll[0]
             broll_asset = assets.get(best["asset_id"])
@@ -149,7 +159,7 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
                 )
         if body.include_captions:
             caption_text = candidate["text"].strip()[:500]
-            operations.append({"operation": "add_caption", "payload": {"sequence_id": sequence["id"], "start": timeline_cursor, "duration": duration, "text": caption_text, "style": {"source": "transcript", "narrative_role": role}}, "reason": "Grounded caption copied from the selected transcript unit"})
+            operations.append({"operation": "add_caption", "payload": {"sequence_id": sequence["id"], "start": timeline_cursor, "duration": duration, "text": caption_text, "style": {"source": "transcript", "narrative_role": role, "speaker": candidate.get("primary_speaker")}}, "reason": "Grounded caption copied from the selected transcript unit"})
         timeline_cursor += duration
     now = utc_now()
     plan = {"id": str(uuid.uuid4()), "project_id": project["id"], "user_id": user_id, "project_state_version": state["version"], "status": "proposed", "objective": objective, "target_duration_sec": body.target_duration_sec, "candidates": ordered, "operations": operations, "broll_recommendations": broll_recommendations, "audience_profile": narrative.get("audience_profile") or {}, "narrative_summary": str(narrative.get("narrative_summary") or ""), "caption_suggestion": str(narrative.get("caption_suggestion") or ""), "cta_suggestion": str(narrative.get("cta_suggestion") or ""), "narrative_provider": narrative.get("provider"), "narrative_model": narrative.get("model"), "evaluation": {}, "created_at": now, "updated_at": now}
