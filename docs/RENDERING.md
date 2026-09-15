@@ -37,13 +37,23 @@ The current executor supports:
 12. H.264/AAC MP4 output
 13. persisted export artifacts with signed download URLs
 
+## AI B-roll overlays
+
+Create For Me may emit an `add_broll_overlay` proposal only when the active sequence contains an unlocked `overlay` track and the planner has a grounded cross-asset visual match.
+
+The proposal records the source asset, media-intelligence record, visual-observation index, observation timestamp and semantic relevance score. The selected source moment is currently bounded to at most three seconds.
+
+When a user applies the AI plan, the backend validates that the B-roll asset is still owned, processed and visual, then writes the clip to the overlay track in the same optimistic-concurrency transaction as the primary edit and captions. B-roll clip volume is zero so the primary spoken audio continues underneath.
+
+The render compiler requires no AI-specific bypass: an overlay is an ordinary canonical clip on an `overlay` track. The FFmpeg executor composites overlay tracks after lower-index visual tracks, so the B-roll temporarily replaces/covers the primary visual while preserving the primary audio mix.
+
+When replacing an earlier AI-generated plan, only overlays tagged with the previous `ai_plan_id` are removed. Manually-created overlay clips are preserved.
+
 ## Version safety
 
-An export stores the exact ProjectState version used to compile its RenderPlan.
-Later timeline edits therefore do not silently alter an already queued export.
+An export stores the exact ProjectState version used to compile its RenderPlan. Later timeline edits therefore do not silently alter an already queued export.
 
-ProjectState itself is snapshotted after edits. Historical versions can be
-listed, inspected and restored as a new version.
+ProjectState itself is snapshotted after edits. Historical versions can be listed, inspected and restored as a new version.
 
 ## Still to build
 
@@ -54,8 +64,7 @@ listed, inspected and restored as a new version.
 - richer caption styling and animation
 - nested/compound sequences
 - hardware-accelerated render profiles
-- render quality-control checks beyond file existence/duration
+- generated-media visual regression tests for B-roll compositing
 - distributed worker scheduling and cancellation
 
-This separation keeps rendering reproducible, testable and safe to invoke from
-AI-authored edit operations.
+This separation keeps rendering reproducible, testable and safe to invoke from AI-authored edit operations.
