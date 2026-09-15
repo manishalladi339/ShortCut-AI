@@ -19,6 +19,15 @@ class RenderTransition(BaseModel):
     duration: int = Field(gt=0)
 
 
+class RenderAudioDucking(BaseModel):
+    enabled: bool = True
+    threshold: float = Field(default=0.03, ge=0.00097563, le=1.0)
+    ratio: float = Field(default=8.0, ge=1.0, le=20.0)
+    attack_ms: float = Field(default=20.0, ge=0.01, le=2000.0)
+    release_ms: float = Field(default=350.0, ge=0.01, le=9000.0)
+    makeup: float = Field(default=1.0, ge=1.0, le=64.0)
+
+
 class RenderClip(BaseModel):
     clip_id: str
     track_id: str
@@ -34,6 +43,7 @@ class RenderClip(BaseModel):
     volume: float = Field(ge=0)
     transition_in: RenderTransition | None = None
     transition_out: RenderTransition | None = None
+    ducking: RenderAudioDucking | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

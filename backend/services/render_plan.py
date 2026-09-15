@@ -95,6 +95,7 @@ async def compile_render_plan(
                 volume=clip["volume"],
                 transition_in=clip.get("transition_in"),
                 transition_out=clip.get("transition_out"),
+                ducking=clip.get("ducking"),
                 metadata=metadata,
             )
             render_clips.append(render_clip)

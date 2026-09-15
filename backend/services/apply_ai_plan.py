@@ -8,7 +8,13 @@ from fastapi import HTTPException
 
 from core.security import utc_now
 from db.mongo import get_db
-from models.project_state import CaptionCue, Clip, ClipTransition, ProjectStateDocument
+from models.project_state import (
+    AudioDucking,
+    CaptionCue,
+    Clip,
+    ClipTransition,
+    ProjectStateDocument,
+)
 from services.plan_review import PlanReviewError, select_reviewed_operations
 
 
@@ -28,6 +34,11 @@ def _conflict(message: str, current_version: int) -> HTTPException:
 def _transition(payload: dict, field: str) -> ClipTransition | None:
     value = payload.get(field)
     return ClipTransition(**value) if value else None
+
+
+def _ducking(payload: dict) -> AudioDucking | None:
+    value = payload.get("ducking")
+    return AudioDucking(**value) if value else None
 
 
 async def apply_plan(
@@ -288,6 +299,7 @@ async def apply_plan(
             volume=float(payload.get("volume", 1.0)),
             transition_in=_transition(payload, "transition_in"),
             transition_out=_transition(payload, "transition_out"),
+            ducking=_ducking(payload),
             metadata={
                 **payload.get("metadata", {}),
                 "ai_plan_id": plan["id"],

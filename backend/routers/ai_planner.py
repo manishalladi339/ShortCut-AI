@@ -12,6 +12,8 @@ from models.ai_plan import AIEditPlanOut, ApplyAIEditPlanRequest, CreateAIEditPl
 from models.project_state import ProjectStateOut
 from services.ai_edit_planner import build_plan
 from services.apply_ai_plan import apply_plan
+from services.music_ducking import apply_music_ducking_policy
+from services.planner_evaluation import evaluate_plan
 
 router = APIRouter(prefix="/projects", tags=["ai-planner"])
 
@@ -53,6 +55,8 @@ async def create_ai_edit_plan(
         )
 
     plan = await build_plan(project=project, user_id=user["id"], state=state, body=body)
+    apply_music_ducking_policy(plan, body)
+    plan["evaluation"] = evaluate_plan(plan)
     await db.ai_edit_plans.insert_one(plan.copy())
     return AIEditPlanOut(**plan)
 
