@@ -1,9 +1,4 @@
-"""Provider abstraction for speech transcription.
-
-The production adapter uses the OpenAI-compatible audio transcription REST API
-and requests verbose JSON with segment/word timestamps. Tests can inject a
-fake provider through the same protocol.
-"""
+"""Provider abstraction for speech transcription and optional diarization."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,13 +23,24 @@ class OpenAITranscriptionProvider:
             raise TranscriptionError("OPENAI_API_KEY is required for transcription")
 
         headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
-        data = {
-            "model": settings.TRANSCRIPTION_MODEL,
-            "response_format": "verbose_json",
-            "timestamp_granularities[]": ["word", "segment"],
-        }
+        diarize = "transcribe-diarize" in settings.TRANSCRIPTION_MODEL.lower()
+        if diarize:
+            data = {
+                "model": settings.TRANSCRIPTION_MODEL,
+                "response_format": "diarized_json",
+                "chunking_strategy": "auto",
+            }
+        else:
+            data = {
+                "model": settings.TRANSCRIPTION_MODEL,
+                "response_format": "verbose_json",
+                "timestamp_granularities[]": ["word", "segment"],
+            }
+
         try:
-            async with httpx.AsyncClient(timeout=settings.MEDIA_INTELLIGENCE_TIMEOUT_SEC) as client:
+            async with httpx.AsyncClient(
+                timeout=settings.MEDIA_INTELLIGENCE_TIMEOUT_SEC
+            ) as client:
                 with audio_path.open("rb") as handle:
                     response = await client.post(
                         f"{settings.OPENAI_API_BASE.rstrip('/')}/audio/transcriptions",
@@ -47,14 +53,26 @@ class OpenAITranscriptionProvider:
 
         if response.status_code >= 400:
             raise TranscriptionError(
-                f"transcription provider returned {response.status_code}: {response.text[:1000]}"
+                f"transcription provider returned {response.status_code}: "
+                f"{response.text[:1000]}"
             )
+
         payload = response.json()
+        segments = payload.get("segments") or []
+        speakers = sorted(
+            {
+                str(segment.get("speaker")).strip()
+                for segment in segments
+                if segment.get("speaker") not in (None, "")
+            }
+        )
         return {
             "text": payload.get("text", ""),
             "language": payload.get("language"),
             "words": payload.get("words") or [],
-            "segments": payload.get("segments") or [],
+            "segments": segments,
+            "speakers": speakers,
+            "diarized": diarize,
             "provider": "openai-compatible",
             "model": settings.TRANSCRIPTION_MODEL,
         }
