@@ -47,6 +47,7 @@ class AIEditPlanOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     applied_project_state_version: int | None = None
+    feedback_outcome: str | None = None
 
 
 class ApplyAIEditPlanRequest(BaseModel):
