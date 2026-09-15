@@ -17,6 +17,7 @@ from services.broll_planning import visual_text
 from services.embeddings import get_embedding_provider
 from services.frame_sampler import extract_frames
 from services.scene_detection import detect_scenes
+from services.silence_detection import SilenceDetectionError, detect_silences
 from services.semantic_units import build_semantic_units
 from services.storage import materialize
 from services.transcription import get_transcription_provider
@@ -65,7 +66,20 @@ async def process_one() -> bool:
                 audio = root / "speech.wav"
                 await job_service.set_progress(job["id"], 15)
                 extract_mono_16k(source, audio)
-                await job_service.set_progress(job["id"], 35)
+                await job_service.set_progress(job["id"], 25)
+                try:
+                    silences = detect_silences(
+                        audio,
+                        duration_sec=asset.get("duration_sec"),
+                    )
+                except SilenceDetectionError as exc:
+                    logger.warning(
+                        "silence detection skipped for asset %s: %s",
+                        asset["id"],
+                        exc,
+                    )
+                    silences = []
+                await job_service.set_progress(job["id"], 40)
                 transcript = await get_transcription_provider().transcribe(audio)
                 scenes, visual_observations = [], []
                 if asset["kind"] == "video":
@@ -88,14 +102,14 @@ async def process_one() -> bool:
         result = {
             "language": transcript.get("language"), "transcript_text": str(transcript.get("text") or "").strip(),
             "words": words, "segments": segments, "speakers": transcript.get("speakers") or [], "diarized": bool(transcript.get("diarized")),
-            "scenes": scenes, "visual_observations": visual_observations, "visual_vectors": visual_vectors,
+            "scenes": scenes, "silences": silences, "visual_observations": visual_observations, "visual_vectors": visual_vectors,
             "semantic_units": semantic_units, "semantic_vectors": semantic_vectors, "embedding_model": settings.EMBEDDING_MODEL,
             "provider": transcript.get("provider"), "model": transcript.get("model"),
         }
         now = utc_now()
         await db.media_intelligence.update_one({"id": intelligence_id}, {"$set": {**result, "status": "completed", "updated_at": now}})
         await db.assets.update_one({"id": asset["id"]}, {"$set": {"language": result["language"], "intelligence_status": "completed", "intelligence_id": intelligence_id, "updated_at": now}})
-        await job_service.succeed(job["id"], {"intelligence_id": intelligence_id, "word_count": len(words), "segment_count": len(segments), "scene_count": len(scenes), "speaker_count": len(transcript.get("speakers") or []), "visual_observation_count": len(visual_observations), "visual_embedded_count": len(visual_vectors), "semantic_unit_count": len(semantic_units), "embedded_unit_count": len(semantic_vectors)})
+        await job_service.succeed(job["id"], {"intelligence_id": intelligence_id, "word_count": len(words), "segment_count": len(segments), "scene_count": len(scenes), "silence_count": len(silences), "speaker_count": len(transcript.get("speakers") or []), "visual_observation_count": len(visual_observations), "visual_embedded_count": len(visual_vectors), "semantic_unit_count": len(semantic_units), "embedded_unit_count": len(semantic_vectors)})
         return True
     except Exception as exc:
         final = job["attempt"] >= job["max_attempts"]

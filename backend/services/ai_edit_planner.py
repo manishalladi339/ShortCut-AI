@@ -13,6 +13,7 @@ from services.highlight_scoring import combine_scores, heuristic_highlight_score
 from services.narrative_planning import structure_narrative
 from services.planner_evaluation import evaluate_plan
 from services.semantic_search import cosine_similarity
+from services.silence_editing import snap_outward_to_silence
 
 
 def _candidate_key(item: dict) -> str:
@@ -45,12 +46,28 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
         asset = assets.get(record["asset_id"])
         if not asset or asset.get("kind") != "video":
             continue
+        silences = record.get("silences") or []
         for index, unit in enumerate(units):
             if index >= len(vectors):
                 continue
-            heuristic, reasons = heuristic_highlight_score(unit, asset_duration_sec=asset.get("duration_sec"))
+            refined_start, refined_end, silence_reasons = snap_outward_to_silence(
+                start=float(unit["start"]),
+                end=float(unit["end"]),
+                silences=silences,
+                snap_window_sec=settings.SILENCE_SNAP_WINDOW_SEC,
+            )
+            refined_unit = {
+                **unit,
+                "start": refined_start,
+                "end": refined_end,
+            }
+            heuristic, reasons = heuristic_highlight_score(
+                refined_unit,
+                asset_duration_sec=asset.get("duration_sec"),
+            )
+            reasons.extend(silence_reasons)
             relevance = cosine_similarity(query_vector, vectors[index])
-            visual = _nearest_visual(record, float(unit["start"]), float(unit["end"]))
+            visual = _nearest_visual(record, refined_start, refined_end)
             visual_bonus = 0.0
             if visual:
                 if visual.get("description"):
@@ -58,7 +75,7 @@ async def build_plan(*, project: dict, user_id: str, state: dict, body: CreateAI
                 if visual.get("text_on_screen"):
                     visual_bonus += 0.015; reasons.append("nearby on-screen text")
             final = min(1.0, combine_scores(heuristic, relevance) + visual_bonus)
-            candidates.append({"asset_id": record["asset_id"], "intelligence_id": record["id"], "unit_index": index, "start": float(unit["start"]), "end": float(unit["end"]), "text": unit["text"], "heuristic_score": heuristic, "relevance_score": relevance, "final_score": final, "reasons": reasons + ["semantic relevance to objective"], "narrative_role": None, "visual_context": visual, "semantic_vector": vectors[index]})
+            candidates.append({"asset_id": record["asset_id"], "intelligence_id": record["id"], "unit_index": index, "start": refined_start, "end": refined_end, "text": unit["text"], "heuristic_score": heuristic, "relevance_score": relevance, "final_score": final, "reasons": reasons + ["semantic relevance to objective"], "narrative_role": None, "visual_context": visual, "semantic_vector": vectors[index]})
     chosen = select_non_overlapping(candidates, target_duration_sec=body.target_duration_sec, max_clips=body.max_clips, min_clip_sec=body.min_clip_sec, max_clip_sec=body.max_clip_sec)
     if not chosen:
         raise HTTPException(status_code=422, detail={"error": {"code": "planner.no_viable_highlights", "message": "No analyzed transcript units met the requested clip constraints"}})
