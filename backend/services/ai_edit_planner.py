@@ -22,6 +22,7 @@ from services.highlight_scoring import (
     heuristic_highlight_score,
     select_non_overlapping,
 )
+from services.music_fit import MusicFitError, attach_loop_transitions, plan_loop_segments
 from services.narrative_planning import structure_narrative
 from services.planner_evaluation import evaluate_plan
 from services.plan_review import assign_operation_ids
@@ -652,21 +653,14 @@ async def build_plan(
                     }
                 },
             )
-        if music_source_start + output_duration > music_duration_ticks + 1:
+        if music_source_start >= music_duration_ticks:
             raise HTTPException(
                 status_code=422,
                 detail={
                     "error": {
-                        "code": "planner.music_asset_too_short",
-                        "message": (
-                            "Selected music does not have enough remaining "
-                            "duration to cover the planned output"
-                        ),
+                        "code": "planner.music_source_start_out_of_bounds",
+                        "message": "Music source start must be inside the selected asset",
                         "asset_id": music_asset["id"],
-                        "required_duration_sec": round(
-                            output_duration / ticks_per_second,
-                            3,
-                        ),
                         "source_start_sec": body.music_source_start_sec,
                     }
                 },
@@ -677,11 +671,87 @@ async def build_plan(
             ticks_per_second=ticks_per_second,
             requested_fade_sec=body.music_fade_sec,
         )
-        music_transition = (
-            {"kind": "fade", "duration": music_fade_ticks}
-            if music_fade_ticks > 0
-            else None
+
+        remaining_music_ticks = music_duration_ticks - music_source_start
+        if (
+            body.music_fit_mode == "strict"
+            and output_duration > remaining_music_ticks + 1
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "code": "planner.music_asset_too_short",
+                        "message": (
+                            "Selected music does not have enough remaining "
+                            "duration to cover the planned output in strict mode"
+                        ),
+                        "asset_id": music_asset["id"],
+                        "required_duration_sec": round(
+                            output_duration / ticks_per_second,
+                            3,
+                        ),
+                        "available_duration_sec": round(
+                            remaining_music_ticks / ticks_per_second,
+                            3,
+                        ),
+                        "source_start_sec": body.music_source_start_sec,
+                    }
+                },
+            )
+
+        requested_crossfade_ticks = round(
+            body.music_loop_crossfade_sec * ticks_per_second
         )
+        try:
+            if body.music_fit_mode == "loop":
+                music_segments, fit_meta = plan_loop_segments(
+                    output_duration_ticks=output_duration,
+                    asset_duration_ticks=music_duration_ticks,
+                    source_start_ticks=music_source_start,
+                    requested_crossfade_ticks=requested_crossfade_ticks,
+                )
+            else:
+                music_segments = [
+                    {
+                        "timeline_start": 0,
+                        "duration": output_duration,
+                        "source_start": music_source_start,
+                        "source_duration": output_duration,
+                    }
+                ]
+                fit_meta = {
+                    "fit_mode": "strict",
+                    "segment_count": 1,
+                    "loop_count": 0,
+                    "crossfade_ticks": 0,
+                }
+        except MusicFitError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "code": "planner.music_fit_invalid",
+                        "message": str(exc),
+                        "asset_id": music_asset["id"],
+                    }
+                },
+            ) from exc
+
+        music_segments = attach_loop_transitions(
+            music_segments,
+            seam_crossfade_ticks=int(fit_meta.get("crossfade_ticks") or 0),
+            intro_fade_ticks=music_fade_ticks,
+            outro_fade_ticks=music_fade_ticks,
+        )
+        music_ducking = {
+            "enabled": body.music_ducking,
+            "threshold": body.music_duck_threshold,
+            "ratio": body.music_duck_ratio,
+            "attack_ms": body.music_duck_attack_ms,
+            "release_ms": body.music_duck_release_ms,
+            "makeup": 1.0,
+        }
         operations.append(
             {
                 "operation": "add_music_bed",
@@ -691,17 +761,26 @@ async def build_plan(
                     "asset_id": music_asset["id"],
                     "timeline_start": 0,
                     "duration": output_duration,
-                    "source_start": music_source_start,
-                    "source_duration": output_duration,
                     "volume": body.music_volume,
-                    "transition_in": music_transition,
-                    "transition_out": music_transition,
+                    "segments": music_segments,
+                    "ducking": music_ducking,
                     "metadata": {
                         "ai_plan": True,
                         "music_bed": True,
                         "user_selected_music": True,
                         "music_volume": body.music_volume,
                         "music_source_start_sec": body.music_source_start_sec,
+                        "music_fit_mode": fit_meta.get("fit_mode"),
+                        "music_segment_count": fit_meta.get("segment_count"),
+                        "music_loop_count": fit_meta.get("loop_count"),
+                        "music_loop_crossfade_ticks": fit_meta.get(
+                            "crossfade_ticks"
+                        ),
+                        "music_loop_crossfade_sec": round(
+                            int(fit_meta.get("crossfade_ticks") or 0)
+                            / ticks_per_second,
+                            6,
+                        ),
                         "transition_strategy": music_fade_meta.get("strategy"),
                         "transition_fade_ticks": music_fade_ticks,
                         "transition_fade_sec": music_fade_meta.get(
@@ -710,8 +789,18 @@ async def build_plan(
                     },
                 },
                 "reason": (
-                    "User-selected music bed placed under the complete "
-                    "planned output with deterministic volume and fades"
+                    "User-selected music bed fitted to the complete planned "
+                    "output with deterministic volume, fades"
+                    + (
+                        f", and {fit_meta.get('loop_count')} crossfaded loop seam(s)"
+                        if int(fit_meta.get("loop_count") or 0) > 0
+                        else ""
+                    )
+                    + (
+                        " with speech-responsive ducking"
+                        if body.music_ducking
+                        else ""
+                    )
                 ),
             }
         )
