@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from core.security import utc_now
 from db.mongo import get_db
-from models.project_state import Clip, ProjectStateDocument
+from models.project_state import CaptionCue, Clip, ProjectStateDocument
 
 
 def _conflict(message: str, current_version: int) -> HTTPException:
@@ -83,7 +83,8 @@ async def apply_plan(
 
     touched_tracks: set[tuple[str, str]] = set()
     for operation in plan.get("operations", []):
-        if operation.get("operation") != "add_clip":
+        operation_type = operation.get("operation")
+        if operation_type not in {"add_clip", "add_caption"}:
             raise HTTPException(
                 status_code=422,
                 detail={"error": {"code": "planner.unsupported_operation", "message": "Plan contains an unsupported operation"}},
@@ -95,6 +96,20 @@ async def apply_plan(
         )
         if not sequence:
             raise HTTPException(status_code=422, detail="Plan sequence no longer exists")
+        if operation_type == "add_caption":
+            cue = CaptionCue(
+                id=str(uuid.uuid4()),
+                start=int(payload["start"]),
+                duration=int(payload["duration"]),
+                text=str(payload["text"]),
+                style={
+                    **payload.get("style", {}),
+                    "ai_plan_id": plan["id"],
+                },
+            )
+            sequence.setdefault("captions", []).append(cue.model_dump(mode="json"))
+            continue
+
         track = next(
             (item for item in sequence["tracks"] if item["id"] == payload["track_id"]),
             None,
@@ -121,6 +136,11 @@ async def apply_plan(
                 )
             if replace_existing_video_clips:
                 track["clips"] = []
+                sequence["captions"] = [
+                    cue
+                    for cue in sequence.get("captions", [])
+                    if not cue.get("style", {}).get("ai_plan_id")
+                ]
             touched_tracks.add(key)
 
         if assets[payload["asset_id"]]["kind"] not in {"video", "image"}:
