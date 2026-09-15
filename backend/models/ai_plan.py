@@ -19,6 +19,9 @@ class HighlightCandidate(BaseModel):
     narrative_role: str | None = None
     speakers: list[str] = Field(default_factory=list)
     primary_speaker: str | None = None
+    source_segments: list[dict[str, float]] = Field(default_factory=list)
+    dead_air_removed_sec: float = Field(default=0.0, ge=0.0)
+    planned_duration_sec: float | None = Field(default=None, ge=0.0)
     visual_context: dict[str, Any] | None = None
 
 
@@ -75,3 +78,6 @@ class CreateAIEditPlanRequest(BaseModel):
     include_captions: bool = True
     include_speakers: list[str] = Field(default_factory=list, max_length=10)
     exclude_speakers: list[str] = Field(default_factory=list, max_length=10)
+    max_same_speaker_run: int = Field(default=2, ge=1, le=5)
+    remove_dead_air: bool = True
+    dead_air_min_sec: float = Field(default=0.9, ge=0.5, le=5.0)
