@@ -22,7 +22,7 @@ async def apply_plan(*, plan: dict, user_id: str, expected_version: int, replace
     asset_ids = {op["payload"]["asset_id"] for op in plan.get("operations", []) if op.get("operation") in {"add_clip", "add_broll_overlay"}}
     assets = {}
     if asset_ids:
-        docs = await db.assets.find({"id": {"$in": list(asset_ids)}, "user_id": user_id, "processing_status": "ready"}, {"_id": 0, "id": 1, "kind": 1}).to_list(len(asset_ids))
+        docs = await db.assets.find({"id": {"$in": list(asset_ids)}, "user_id": user_id, "processing_status": "ready"}, {"_id": 0, "id": 1, "kind": 1, "duration_sec": 1}).to_list(len(asset_ids))
         assets = {doc["id"]: doc for doc in docs}
     missing = sorted(asset_ids - set(assets))
     if missing: raise HTTPException(status_code=409, detail={"error": {"code": "planner.asset_unavailable", "message": "One or more source assets are no longer ready", "asset_ids": missing}})
@@ -49,8 +49,39 @@ async def apply_plan(*, plan: dict, user_id: str, expected_version: int, replace
                 for overlay in sequence.get("tracks", []):
                     if overlay.get("kind") == "overlay": overlay["clips"] = [clip for clip in overlay.get("clips", []) if not clip.get("metadata", {}).get("ai_plan_id")]
             touched_video_tracks.add(key)
-        if assets[payload["asset_id"]]["kind"] not in {"video", "image"}: raise HTTPException(status_code=422, detail="Plan source is not a visual asset")
-        clip = Clip(id=str(uuid.uuid4()), asset_id=payload["asset_id"], timeline_start=int(payload["timeline_start"]), duration=int(payload["duration"]), source_start=int(payload.get("source_start", 0)), source_duration=int(payload["source_duration"]), volume=float(payload.get("volume", 1.0)), metadata={**payload.get("metadata", {}), "ai_plan_id": plan["id"]})
+        asset = assets[payload["asset_id"]]
+        if asset["kind"] not in {"video", "image"}:
+            raise HTTPException(status_code=422, detail="Plan source is not a visual asset")
+        source_start = int(payload.get("source_start", 0))
+        source_duration = int(payload["source_duration"])
+        asset_duration_sec = float(asset.get("duration_sec") or 0.0)
+        if asset_duration_sec > 0:
+            ticks_per_second = (
+                sequence["timebase"]["numerator"]
+                / sequence["timebase"]["denominator"]
+            )
+            asset_duration_ticks = round(asset_duration_sec * ticks_per_second)
+            if source_start + source_duration > asset_duration_ticks + 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": {
+                            "code": "planner.source_out_of_bounds",
+                            "message": "Planned source range exceeds the media duration",
+                            "asset_id": payload["asset_id"],
+                        }
+                    },
+                )
+        clip = Clip(
+            id=str(uuid.uuid4()),
+            asset_id=payload["asset_id"],
+            timeline_start=int(payload["timeline_start"]),
+            duration=int(payload["duration"]),
+            source_start=source_start,
+            source_duration=source_duration,
+            volume=float(payload.get("volume", 1.0)),
+            metadata={**payload.get("metadata", {}), "ai_plan_id": plan["id"]},
+        )
         track["clips"].append(clip.model_dump(mode="json"))
     now = utc_now(); candidate["version"] = state["version"] + 1; candidate["updated_at"] = now
     candidate = ProjectStateDocument(**candidate).model_dump()
