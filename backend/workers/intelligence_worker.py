@@ -13,6 +13,7 @@ from db.mongo import get_db
 from models.job import JobType
 from services import job_service
 from services.audio_extract import extract_mono_16k
+from services.embeddings import get_embedding_provider
 from services.scene_detection import detect_scenes
 from services.semantic_units import build_semantic_units
 from services.storage import materialize
@@ -57,6 +58,7 @@ def _normalize_segments(segments: list[dict]) -> list[dict]:
 
 
 async def process_one() -> bool:
+    from core.config import settings
     job = await job_service.claim_next(JobType.media_intelligence)
     if not job:
         return False
@@ -99,6 +101,12 @@ async def process_one() -> bool:
         words = _normalize_words(transcript.get("words") or [])
         segments = _normalize_segments(transcript.get("segments") or [])
         semantic_units = build_semantic_units(segments=segments, scenes=scenes)
+        await job_service.set_progress(job["id"], 80)
+        semantic_vectors: list[list[float]] = []
+        if semantic_units:
+            semantic_vectors = await get_embedding_provider().embed(
+                [unit["text"] for unit in semantic_units]
+            )
 
         result = {
             "language": transcript.get("language"),
@@ -107,6 +115,8 @@ async def process_one() -> bool:
             "segments": segments,
             "scenes": scenes,
             "semantic_units": semantic_units,
+            "semantic_vectors": semantic_vectors,
+            "embedding_model": settings.EMBEDDING_MODEL,
             "provider": transcript.get("provider"),
             "model": transcript.get("model"),
         }
@@ -134,6 +144,7 @@ async def process_one() -> bool:
                 "segment_count": len(segments),
                 "scene_count": len(scenes),
                 "semantic_unit_count": len(semantic_units),
+                "embedded_unit_count": len(semantic_vectors),
             },
         )
         return True
