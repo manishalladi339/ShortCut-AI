@@ -84,6 +84,7 @@ async def create_export(
         "job_id": job["id"],
         "storage_key": None,
         "duration_sec": None,
+        "render_metadata": {},
         "created_at": now,
         "updated_at": now,
     }
