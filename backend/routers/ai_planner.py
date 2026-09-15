@@ -13,6 +13,7 @@ from models.project_state import ProjectStateOut
 from services.ai_edit_planner import build_plan
 from services.apply_ai_plan import apply_plan
 from services.music_ducking import apply_music_ducking_policy
+from services.music_fit import attach_looping_music_bed
 from services.planner_evaluation import evaluate_plan
 
 router = APIRouter(prefix="/projects", tags=["ai-planner"])
@@ -54,7 +55,25 @@ async def create_ai_edit_plan(
             },
         )
 
-    plan = await build_plan(project=project, user_id=user["id"], state=state, body=body)
+    looping_music = bool(body.music_asset_id and body.music_fit_mode == "loop")
+    planning_body = (
+        body.model_copy(update={"music_asset_id": None})
+        if looping_music
+        else body
+    )
+    plan = await build_plan(
+        project=project,
+        user_id=user["id"],
+        state=state,
+        body=planning_body,
+    )
+    if looping_music:
+        await attach_looping_music_bed(
+            plan=plan,
+            state=state,
+            user_id=user["id"],
+            body=body,
+        )
     apply_music_ducking_policy(plan, body)
     plan["evaluation"] = evaluate_plan(plan)
     await db.ai_edit_plans.insert_one(plan.copy())
