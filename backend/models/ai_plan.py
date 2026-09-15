@@ -38,6 +38,12 @@ class AIEditPlanOut(BaseModel):
     operations: list[ProposedEditOperation] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    applied_project_state_version: int | None = None
+
+
+class ApplyAIEditPlanRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    replace_existing_video_clips: bool = False
 
 
 class CreateAIEditPlanRequest(BaseModel):
