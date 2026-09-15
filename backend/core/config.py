@@ -44,7 +44,12 @@ class Settings:
 
     # Speech / AI providers
     TRANSCRIPTION_PROVIDER: str = os.environ.get("TRANSCRIPTION_PROVIDER", "openai")
-    TRANSCRIPTION_MODEL: str = os.environ.get("TRANSCRIPTION_MODEL", "whisper-1")
+    TRANSCRIPTION_MODEL: str = os.environ.get(
+        "TRANSCRIPTION_MODEL", "gpt-4o-transcribe-diarize"
+    )
+    VISION_PROVIDER: str = os.environ.get("VISION_PROVIDER", "openai")
+    VISION_MODEL: str = os.environ.get("VISION_MODEL", "gpt-4o")
+    MAX_VISION_FRAMES: int = int(os.environ.get("MAX_VISION_FRAMES", "8"))
     EMBEDDING_PROVIDER: str = os.environ.get("EMBEDDING_PROVIDER", "openai")
     EMBEDDING_MODEL: str = os.environ.get(
         "EMBEDDING_MODEL", "text-embedding-3-small"
