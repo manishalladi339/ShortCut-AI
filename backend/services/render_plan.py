@@ -58,6 +58,8 @@ async def compile_render_plan(
     render_clips: list[RenderClip] = []
     duration_ticks = 0
     for track in sequence["tracks"]:
+        if track.get("muted"):
+            continue
         for clip in track["clips"]:
             if not clip.get("enabled", True):
                 continue
@@ -72,6 +74,12 @@ async def compile_render_plan(
                         }
                     },
                 )
+            metadata = {
+                **clip.get("metadata", {}),
+                "_asset_kind": asset.get("kind"),
+                "_asset_audio_codec": asset.get("media_metadata", {}).get("audio_codec"),
+                "_transform": clip.get("transform", {}),
+            }
             render_clip = RenderClip(
                 clip_id=clip["id"],
                 track_id=track["id"],
@@ -84,7 +92,7 @@ async def compile_render_plan(
                 source_duration=clip["source_duration"],
                 playback_rate=clip["playback_rate"],
                 volume=clip["volume"],
-                metadata=clip.get("metadata", {}),
+                metadata=metadata,
             )
             render_clips.append(render_clip)
             duration_ticks = max(duration_ticks, clip["timeline_start"] + clip["duration"])
