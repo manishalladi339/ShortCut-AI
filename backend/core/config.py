@@ -30,7 +30,9 @@ class Settings:
 
     # Media workers
     FFPROBE_PATH: str = os.environ.get("FFPROBE_PATH", "ffprobe")
+    FFMPEG_PATH: str = os.environ.get("FFMPEG_PATH", "ffmpeg")
     MEDIA_PROBE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_PROBE_TIMEOUT_SEC", "30"))
+    MEDIA_DERIVATIVE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_DERIVATIVE_TIMEOUT_SEC", "180"))
     WORKER_POLL_INTERVAL_SEC: float = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0"))
 
     EMERGENT_AUTH_SESSION_URL: str = os.environ.get(
