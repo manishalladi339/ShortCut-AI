@@ -35,6 +35,24 @@ class Settings:
     MEDIA_DERIVATIVE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_DERIVATIVE_TIMEOUT_SEC", "180"))
     RENDER_TIMEOUT_SEC: int = int(os.environ.get("RENDER_TIMEOUT_SEC", "900"))
     WORKER_POLL_INTERVAL_SEC: float = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0"))
+    MEDIA_INTELLIGENCE_TIMEOUT_SEC: int = int(
+        os.environ.get("MEDIA_INTELLIGENCE_TIMEOUT_SEC", "900")
+    )
+    SCENE_DETECTION_THRESHOLD: float = float(
+        os.environ.get("SCENE_DETECTION_THRESHOLD", "0.35")
+    )
+
+    # Speech / AI providers
+    TRANSCRIPTION_PROVIDER: str = os.environ.get("TRANSCRIPTION_PROVIDER", "openai")
+    TRANSCRIPTION_MODEL: str = os.environ.get("TRANSCRIPTION_MODEL", "whisper-1")
+    EMBEDDING_PROVIDER: str = os.environ.get("EMBEDDING_PROVIDER", "openai")
+    EMBEDDING_MODEL: str = os.environ.get(
+        "EMBEDDING_MODEL", "text-embedding-3-small"
+    )
+    OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
+    OPENAI_API_BASE: str = os.environ.get(
+        "OPENAI_API_BASE", "https://api.openai.com/v1"
+    )
 
     EMERGENT_AUTH_SESSION_URL: str = os.environ.get(
         "EMERGENT_AUTH_SESSION_URL",
