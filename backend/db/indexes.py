@@ -33,6 +33,8 @@ async def ensure_indexes() -> None:
     await db.project_states.create_index([("user_id", 1), ("updated_at", -1)])
     await db.edit_operations.create_index([("project_id", 1), ("to_version", 1)], unique=True)
     await db.edit_operations.create_index([("user_id", 1), ("created_at", -1)])
+    await db.project_state_versions.create_index([("project_id", 1), ("version", 1)], unique=True)
+    await db.project_state_versions.create_index([("user_id", 1), ("project_id", 1), ("version", -1)])
 
     await db.assets.create_index("user_id")
     await db.assets.create_index("project_id")
