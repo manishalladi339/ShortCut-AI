@@ -37,7 +37,12 @@ async def ensure_indexes() -> None:
     await db.assets.create_index("user_id")
     await db.assets.create_index("project_id")
     await db.assets.create_index([("user_id", 1), ("kind", 1)])
-    await db.assets.create_index("s3_key", unique=True)
+    await db.assets.create_index("storage_key", unique=True)
+    await db.assets.create_index([("processing_status", 1), ("updated_at", -1)])
+
+    await db.jobs.create_index([("type", 1), ("status", 1), ("created_at", 1)])
+    await db.jobs.create_index([("user_id", 1), ("created_at", -1)])
+    await db.jobs.create_index("asset_id")
 
     await db.audit_logs.create_index("user_id")
     await db.audit_logs.create_index("action")
