@@ -47,6 +47,28 @@ def _transitions_valid(payload: dict) -> bool:
     return True
 
 
+def _ducking_valid(payload: dict) -> bool:
+    ducking = payload.get("ducking")
+    if ducking is None:
+        return True
+    try:
+        threshold = float(ducking.get("threshold"))
+        ratio = float(ducking.get("ratio"))
+        attack_ms = float(ducking.get("attack_ms"))
+        release_ms = float(ducking.get("release_ms"))
+        makeup = float(ducking.get("makeup", 1.0))
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return (
+        isinstance(ducking.get("enabled"), bool)
+        and 0.00097563 <= threshold <= 1.0
+        and 1.0 <= ratio <= 20.0
+        and 0.01 <= attack_ms <= 2000.0
+        and 0.01 <= release_ms <= 9000.0
+        and 1.0 <= makeup <= 64.0
+    )
+
+
 def evaluate_plan(plan: dict) -> dict:
     candidates = plan.get("candidates") or []
     operations = plan.get("operations") or []
@@ -90,6 +112,7 @@ def evaluate_plan(plan: dict) -> dict:
 
     grounded = True
     transitions_valid = True
+    ducking_valid = True
     for operation in operations:
         operation_type = operation.get("operation")
         payload = operation.get("payload") or {}
@@ -127,6 +150,7 @@ def evaluate_plan(plan: dict) -> dict:
             transitions_valid = (
                 transitions_valid and _transitions_valid(payload)
             )
+            ducking_valid = ducking_valid and _ducking_valid(payload)
 
         elif operation_type == "add_caption":
             style = payload.get("style") or {}
@@ -160,6 +184,12 @@ def evaluate_plan(plan: dict) -> dict:
         for operation in operations
         if operation.get("operation") == "add_music_bed"
     )
+    ducked_music_bed_count = sum(
+        1
+        for operation in operations
+        if operation.get("operation") == "add_music_bed"
+        and bool(((operation.get("payload") or {}).get("ducking") or {}).get("enabled"))
+    )
 
     return {
         "operation_count": len(operations),
@@ -169,7 +199,9 @@ def evaluate_plan(plan: dict) -> dict:
         "rhythm_snapped_overlay_count": rhythm_snapped_overlay_count,
         "faded_overlay_count": faded_overlay_count,
         "music_bed_count": music_bed_count,
+        "ducked_music_bed_count": ducked_music_bed_count,
         "transitions_valid": transitions_valid,
+        "ducking_valid": ducking_valid,
         "average_highlight_score": (
             round(sum(scores) / len(scores), 4)
             if scores
