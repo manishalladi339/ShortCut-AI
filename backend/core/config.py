@@ -41,6 +41,15 @@ class Settings:
     SCENE_DETECTION_THRESHOLD: float = float(
         os.environ.get("SCENE_DETECTION_THRESHOLD", "0.35")
     )
+    SILENCE_NOISE_DB: float = float(
+        os.environ.get("SILENCE_NOISE_DB", "-35")
+    )
+    SILENCE_MIN_DURATION_SEC: float = float(
+        os.environ.get("SILENCE_MIN_DURATION_SEC", "0.35")
+    )
+    SILENCE_SNAP_WINDOW_SEC: float = float(
+        os.environ.get("SILENCE_SNAP_WINDOW_SEC", "0.75")
+    )
 
     # Speech / AI providers
     TRANSCRIPTION_PROVIDER: str = os.environ.get("TRANSCRIPTION_PROVIDER", "openai")
