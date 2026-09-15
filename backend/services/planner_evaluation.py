@@ -16,6 +16,16 @@ def evaluate_plan(plan: dict) -> dict:
     )
     scores = [float(item.get("final_score", 0.0)) for item in candidates]
     roles = [str(item.get("narrative_role") or "") for item in candidates]
+    primary_speakers = [
+        str(item.get("primary_speaker"))
+        for item in candidates
+        if item.get("primary_speaker")
+    ]
+    speaker_switches = sum(
+        1
+        for previous, current in zip(primary_speakers, primary_speakers[1:])
+        if previous != current
+    )
 
     grounded = True
     for operation in operations:
@@ -40,4 +50,6 @@ def evaluate_plan(plan: dict) -> dict:
         "payoff_present": "payoff" in roles,
         "all_operations_grounded": grounded,
         "candidate_count": len(candidates),
+        "speaker_count": len(set(primary_speakers)),
+        "speaker_switch_count": speaker_switches,
     }
