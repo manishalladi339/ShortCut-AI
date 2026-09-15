@@ -49,6 +49,9 @@ class Settings:
     EMBEDDING_MODEL: str = os.environ.get(
         "EMBEDDING_MODEL", "text-embedding-3-small"
     )
+    NARRATIVE_PROVIDER: str = os.environ.get("NARRATIVE_PROVIDER", "deterministic")
+    NARRATIVE_MODEL: str = os.environ.get("NARRATIVE_MODEL", "gpt-5-mini")
+    AI_PLANNER_TIMEOUT_SEC: int = int(os.environ.get("AI_PLANNER_TIMEOUT_SEC", "120"))
     OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
     OPENAI_API_BASE: str = os.environ.get(
         "OPENAI_API_BASE", "https://api.openai.com/v1"
