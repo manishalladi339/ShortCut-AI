@@ -98,3 +98,8 @@ class CreateAIEditPlanRequest(BaseModel):
     music_source_start_sec: float = Field(default=0.0, ge=0.0, le=7200.0)
     music_volume: float = Field(default=0.12, ge=0.0, le=1.0)
     music_fade_sec: float = Field(default=0.75, ge=0.05, le=5.0)
+    music_ducking: bool = True
+    music_duck_threshold: float = Field(default=0.03, ge=0.00097563, le=1.0)
+    music_duck_ratio: float = Field(default=8.0, ge=1.0, le=20.0)
+    music_duck_attack_ms: float = Field(default=20.0, ge=0.01, le=2000.0)
+    music_duck_release_ms: float = Field(default=350.0, ge=0.01, le=9000.0)
