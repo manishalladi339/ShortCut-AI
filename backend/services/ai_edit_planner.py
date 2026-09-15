@@ -376,9 +376,22 @@ async def build_plan(
             6,
         )
 
+        beat_grid = record.get("beat_grid") or None
+        timing_signal = "energy_onset"
+        timing_events = record.get("rhythm_events") or []
+        if beat_grid and beat_grid.get("beats"):
+            timing_signal = "beat_grid"
+            timing_events = [
+                {
+                    "time": beat,
+                    "strength": float(beat_grid.get("confidence") or 0.0),
+                }
+                for beat in beat_grid["beats"]
+            ]
+
         mapped_rhythm = map_rhythm_to_timeline(
             source_segments=source_segments,
-            rhythm_events=record.get("rhythm_events") or [],
+            rhythm_events=timing_events,
             timeline_start=candidate_timeline_start,
             ticks_per_second=ticks_per_second,
         )
@@ -393,6 +406,21 @@ async def build_plan(
                 ),
                 min_strength=0.05,
             )
+            if rhythm_event:
+                rhythm_event = {
+                    **rhythm_event,
+                    "signal": timing_signal,
+                    "bpm": (
+                        beat_grid.get("bpm")
+                        if timing_signal == "beat_grid"
+                        else None
+                    ),
+                    "confidence": (
+                        beat_grid.get("confidence")
+                        if timing_signal == "beat_grid"
+                        else rhythm_event.get("strength")
+                    ),
+                }
 
         broll = recommend_broll_for_highlight(
             highlight=candidate,
@@ -467,6 +495,21 @@ async def build_plan(
                                 ),
                                 "rhythm_strength": (
                                     rhythm_event.get("strength")
+                                    if rhythm_event
+                                    else None
+                                ),
+                                "rhythm_signal": (
+                                    rhythm_event.get("signal")
+                                    if rhythm_event
+                                    else None
+                                ),
+                                "rhythm_bpm": (
+                                    rhythm_event.get("bpm")
+                                    if rhythm_event
+                                    else None
+                                ),
+                                "rhythm_confidence": (
+                                    rhythm_event.get("confidence")
                                     if rhythm_event
                                     else None
                                 ),
