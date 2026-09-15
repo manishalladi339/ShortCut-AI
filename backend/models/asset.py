@@ -47,6 +47,7 @@ class AssetOut(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
     media_metadata: dict[str, Any] = Field(default_factory=dict)
+    derivatives: dict[str, Any] = Field(default_factory=dict)
 
     storage_type: str
     storage_bucket: str
