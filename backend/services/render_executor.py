@@ -48,6 +48,31 @@ def _atempo_chain(rate: float) -> str:
     return ",".join(f"atempo={value:.8f}" for value in stages)
 
 
+def _transition_seconds(
+    transition,
+    *,
+    numerator: int,
+    denominator: int,
+    clip_duration_sec: float,
+) -> float:
+    if transition is None:
+        return 0.0
+    if transition.kind != "fade":
+        raise RenderExecutionError(
+            f"unsupported transition kind: {transition.kind}"
+        )
+    duration = _ticks_to_seconds(
+        transition.duration,
+        numerator,
+        denominator,
+    )
+    if duration <= 0 or duration > clip_duration_sec + 1e-6:
+        raise RenderExecutionError(
+            "transition duration must fit inside the clip"
+        )
+    return duration
+
+
 def _run(command: list[str]) -> None:
     try:
         completed = subprocess.run(
@@ -220,6 +245,29 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                         f"rotate={rotation_radians:.10f}:"
                         "ow=rotw(iw):oh=roth(ih):c=none,"
                     )
+                fade_in = _transition_seconds(
+                    clip.transition_in,
+                    numerator=plan.timebase_numerator,
+                    denominator=plan.timebase_denominator,
+                    clip_duration_sec=target_duration,
+                )
+                fade_out = _transition_seconds(
+                    clip.transition_out,
+                    numerator=plan.timebase_numerator,
+                    denominator=plan.timebase_denominator,
+                    clip_duration_sec=target_duration,
+                )
+                if fade_in > 0:
+                    visual_filter += (
+                        f"fade=t=in:st={timeline_start:.6f}:"
+                        f"d={fade_in:.6f}:alpha=1,"
+                    )
+                if fade_out > 0:
+                    fade_out_start = timeline_start + target_duration - fade_out
+                    visual_filter += (
+                        f"fade=t=out:st={fade_out_start:.6f}:"
+                        f"d={fade_out:.6f}:alpha=1,"
+                    )
                 visual_filter += (
                     f"colorchannelmixer=aa={opacity:.8f}"
                     f"[{prepared}]"
@@ -263,16 +311,38 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     * 1000
                 )
                 label = f"amixsrc{idx}"
-                filters.append(
+                fade_in = _transition_seconds(
+                    clip.transition_in,
+                    numerator=plan.timebase_numerator,
+                    denominator=plan.timebase_denominator,
+                    clip_duration_sec=target_duration,
+                )
+                fade_out = _transition_seconds(
+                    clip.transition_out,
+                    numerator=plan.timebase_numerator,
+                    denominator=plan.timebase_denominator,
+                    clip_duration_sec=target_duration,
+                )
+                audio_filter = (
                     f"[{input_index}:a]"
                     f"atrim=start={source_start:.6f}:duration={source_duration:.6f},"
                     "asetpts=PTS-STARTPTS,"
                     f"{_atempo_chain(clip.playback_rate)},"
                     f"atrim=duration={target_duration:.6f},"
+                )
+                if fade_in > 0:
+                    audio_filter += f"afade=t=in:st=0:d={fade_in:.6f},"
+                if fade_out > 0:
+                    audio_filter += (
+                        f"afade=t=out:st={max(0.0, target_duration - fade_out):.6f}:"
+                        f"d={fade_out:.6f},"
+                    )
+                audio_filter += (
                     f"volume={clip.volume:.8f},"
                     f"adelay={delay_ms}|{delay_ms}"
                     f"[{label}]"
                 )
+                filters.append(audio_filter)
                 audio_labels.append(label)
 
             mix_inputs = "".join(f"[{label}]" for label in audio_labels)
