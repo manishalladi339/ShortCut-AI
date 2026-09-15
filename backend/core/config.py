@@ -45,6 +45,10 @@ class Settings:
     # Speech / AI providers
     TRANSCRIPTION_PROVIDER: str = os.environ.get("TRANSCRIPTION_PROVIDER", "openai")
     TRANSCRIPTION_MODEL: str = os.environ.get("TRANSCRIPTION_MODEL", "whisper-1")
+    EMBEDDING_PROVIDER: str = os.environ.get("EMBEDDING_PROVIDER", "openai")
+    EMBEDDING_MODEL: str = os.environ.get(
+        "EMBEDDING_MODEL", "text-embedding-3-small"
+    )
     OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
     OPENAI_API_BASE: str = os.environ.get(
         "OPENAI_API_BASE", "https://api.openai.com/v1"
