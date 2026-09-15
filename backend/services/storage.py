@@ -45,6 +45,9 @@ class StorageBackend(ABC):
     @abstractmethod
     def download_to(self, key: str, destination: Path) -> None: ...
 
+    @abstractmethod
+    def upload_file(self, key: str, source: Path, content_type: str | None = None) -> None: ...
+
     @staticmethod
     def _build_key(user_id: str, kind: str, asset_id: str, ext: str) -> str:
         safe_ext = ext.lstrip(".").lower() or "bin"
@@ -104,6 +107,11 @@ class LocalStorage(StorageBackend):
         source = self.local_path(key)
         if not source.is_file():
             raise FileNotFoundError(key)
+        destination.write_bytes(source.read_bytes())
+
+    def upload_file(self, key: str, source: Path, content_type: str | None = None) -> None:
+        destination = self.local_path(key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(source.read_bytes())
 
 
@@ -166,6 +174,13 @@ class S3Storage(StorageBackend):
 
     def download_to(self, key: str, destination: Path) -> None:
         self.client.download_file(self.bucket, key, str(destination))
+
+    def upload_file(self, key: str, source: Path, content_type: str | None = None) -> None:
+        extra = {"ContentType": content_type} if content_type else None
+        if extra:
+            self.client.upload_file(str(source), self.bucket, key, ExtraArgs=extra)
+        else:
+            self.client.upload_file(str(source), self.bucket, key)
 
 
 _storage: StorageBackend | None = None
