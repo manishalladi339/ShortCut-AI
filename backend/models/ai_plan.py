@@ -17,6 +17,8 @@ class HighlightCandidate(BaseModel):
     final_score: float = Field(ge=0, le=1)
     reasons: list[str] = Field(default_factory=list)
     narrative_role: str | None = None
+    speakers: list[str] = Field(default_factory=list)
+    primary_speaker: str | None = None
     visual_context: dict[str, Any] | None = None
 
 
@@ -71,3 +73,5 @@ class CreateAIEditPlanRequest(BaseModel):
     min_clip_sec: float = Field(default=2.0, ge=0.5, le=30.0)
     max_clip_sec: float = Field(default=20.0, ge=1.0, le=60.0)
     include_captions: bool = True
+    include_speakers: list[str] = Field(default_factory=list, max_length=10)
+    exclude_speakers: list[str] = Field(default_factory=list, max_length=10)
