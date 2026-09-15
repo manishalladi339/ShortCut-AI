@@ -24,6 +24,7 @@ hook / body / payoff roles
         |
         v
 grounded clips + captions + B-roll + transitions
+   + optional user-selected music bed
         |
         v
 explicit apply transaction
@@ -109,6 +110,7 @@ Every generated plan stores measurable baseline metrics including:
 - speaker count/switches and maximum same-speaker run
 - rhythm-snapped B-roll count
 - faded B-roll count and transition validity
+- user-selected music-bed count
 - operation/candidate counts
 
 Users can also submit human feedback:
@@ -130,7 +132,8 @@ Still to build:
 - stronger narrative evaluation datasets
 - automatic comparison of deterministic vs LLM planner variants
 - animated caption styling
-- dedicated music-track selection/mixing
+- licensed music catalog search and AI recommendation
+- dynamic speech-aware music ducking
 - richer transition primitives and keyframes
 - creator preference learning
 - frontend UI for the now-supported granular operation review contract
