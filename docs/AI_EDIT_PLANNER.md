@@ -23,7 +23,7 @@ audience + narrative structuring
 hook / body / payoff roles
         |
         v
-grounded clip + caption proposals
+grounded clips + captions + B-roll + transitions
         |
         v
 explicit apply transaction
@@ -89,12 +89,14 @@ Existing timeline clips are never replaced unless the caller explicitly sets
 
 ## Planner evaluation
 
-Every generated plan stores measurable baseline metrics:
-- selected duration
+Every generated plan stores measurable baseline metrics including:
+- selected duration and dead-air reduction
 - average highlight score
-- hook presence
-- payoff presence
+- hook/payoff presence
 - grounding integrity
+- speaker count/switches and maximum same-speaker run
+- rhythm-snapped B-roll count
+- faded B-roll count and transition validity
 - operation/candidate counts
 
 Users can also submit human feedback:
@@ -115,9 +117,8 @@ compared against actual human acceptance rather than subjective demo quality.
 Still to build:
 - stronger narrative evaluation datasets
 - automatic comparison of deterministic vs LLM planner variants
-- speaker diarization-aware story construction
-- visual-semantic signals in ranking
-- B-roll planning
 - animated caption styling
-- music/beat-aware editing
+- dedicated music-track selection/mixing
+- richer transition primitives and keyframes
 - creator preference learning
+- frontend review controls for accepting/rejecting individual AI operations
