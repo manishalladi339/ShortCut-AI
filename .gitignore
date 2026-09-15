@@ -1,13 +1,10 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # IDE and editors
 .idea/
 .vscode/
 
 # Dependencies
 node_modules/
-/node_modules
-/.pnp
+.pnp
 .pnp.js
 .yarn/install-state.gz
 .yarn/*
@@ -16,55 +13,64 @@ node_modules/
 !.yarn/releases
 !.yarn/versions
 
-# Testing
-/coverage
-
-# Next.js
-/.next/
-/out/
-next-env.d.ts
-*.tsbuildinfo
+# Testing / coverage
+coverage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Production builds
-/build
+build/
 dist/
-dist
+out/
+.next/
+*.tsbuildinfo
 
-# Environment files (comprehensive coverage)
-
+# Environment and credentials
+.env
+.env.*
+*.env
 *token.json*
 *credentials.json*
+credentials.json
+*.pem
+*.key
+.credentials
 
-# Logs and debug files
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
 dump.rdb
 
-# System files
+# OS
 .DS_Store
-*.pem
 
 # Python
 __pycache__/
-*pyc*
+*.py[cod]
 venv/
 .venv/
 
-# Development tools
-chainlit.md
-.chainlit
+# Notebooks / tools
 .ipynb_checkpoints/
+.chainlit
+chainlit.md
 .ac
 
 # Deployment
-.vercel
+.vercel/
 
-# Data and databases
-agenthub/agents/youtube/db
+# Mobile / Expo / Metro
+.expo/
+.expo-shared/
+.metro-cache/
+**/.metro-cache/
+android-sdk/
 
-# Archive files and large assets
+# Archives / generated large files
 **/*.zip
 **/*.tar.gz
 **/*.tar
@@ -73,16 +79,10 @@ agenthub/agents/youtube/db
 *.deb
 *.dylib
 
-# Build caches
+# Generic caches
 .cache/
+**/.cache/
 
+# Local app data
 memory/test_credentials.md
-
-# Mobile development
-android-sdk/
-.env
-.env.*
-*.env
-credentials.json
-*.key
-.credentials
+agenthub/agents/youtube/db

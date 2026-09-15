@@ -1,14 +1,10 @@
-"""Asset router — presigned upload + confirm + list + get + delete.
-
-Uses stub S3 (local disk) backend; will swap to AWS S3 (boto3) without
-changing the route contract.
-"""
+"""Asset upload, processing and library routes."""
 import os
 import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, Response
 
 from core.deps import get_current_user
@@ -23,33 +19,39 @@ from models.asset import (
     PresignUploadOut,
 )
 from models.common import AssetKind, UploadStatus
-from services import s3_service
+from models.job import JobType
+from services import job_service
+from services.storage import LocalStorage, get_storage
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
 
-def _to_out(doc: dict, refresh_signed_url: bool = True) -> AssetOut:
-    if refresh_signed_url and doc.get("upload_status") == UploadStatus.uploaded.value:
-        doc = {**doc, "s3_url": s3_service.presign_download(doc["s3_key"])}
+def _to_out(doc: dict, refresh_download_url: bool = True) -> AssetOut:
+    if refresh_download_url and doc.get("upload_status") == UploadStatus.uploaded.value:
+        doc = {**doc, "download_url": get_storage().presign_download(doc["storage_key"])}
     return AssetOut(**{k: v for k, v in doc.items() if k != "_id"})
 
 
 @router.post("/presign-upload", response_model=PresignUploadOut, status_code=status.HTTP_201_CREATED)
-async def presign_upload(body: PresignUploadBody, user: dict = Depends(get_current_user)) -> PresignUploadOut:
+async def presign_upload(
+    body: PresignUploadBody, user: dict = Depends(get_current_user)
+) -> PresignUploadOut:
     db = get_db()
     if body.project_id:
-        proj = await db.projects.find_one(
+        project = await db.projects.find_one(
             {"id": body.project_id, "user_id": user["id"]}, {"_id": 0, "id": 1}
         )
-        if not proj:
+        if not project:
             raise HTTPException(
                 status_code=404,
                 detail={"error": {"code": "resource.not_found", "message": "Project not found"}},
             )
+
+    storage = get_storage()
     asset_id = str(uuid.uuid4())
     ext = os.path.splitext(body.filename)[1] or ""
-    s3_key = s3_service.build_key(user["id"], body.kind.value, asset_id, ext)
-    upload_url, headers, expires_at = s3_service.presign_upload(s3_key, ttl_seconds=3600)
+    storage_key = storage.build_key(user["id"], body.kind.value, asset_id, ext)
+    upload_url, headers, expires_at = storage.presign_upload(storage_key, ttl_seconds=3600)
 
     now = utc_now()
     doc = {
@@ -63,13 +65,16 @@ async def presign_upload(body: PresignUploadBody, user: dict = Depends(get_curre
         "duration_sec": None,
         "width": None,
         "height": None,
-        "storage_type": "s3",
-        "s3_bucket": s3_service.BUCKET,
-        "s3_key": s3_key,
-        "s3_url": None,
+        "media_metadata": {},
+        "storage_type": "s3" if storage.__class__.__name__ == "S3Storage" else "local",
+        "storage_bucket": storage.bucket,
+        "storage_key": storage_key,
+        "download_url": None,
         "upload_status": UploadStatus.pending.value,
+        "processing_status": "pending",
+        "processing_job_id": None,
         "is_watermarked": False,
-        "language": "en",
+        "language": None,
         "tags": body.tags,
         "created_at": now,
         "updated_at": now,
@@ -79,14 +84,16 @@ async def presign_upload(body: PresignUploadBody, user: dict = Depends(get_curre
         asset_id=asset_id,
         upload_url=upload_url,
         upload_headers=headers,
-        s3_key=s3_key,
+        storage_key=storage_key,
         expires_at=datetime.fromisoformat(expires_at),
     )
 
 
 @router.post("/{asset_id}/confirm", response_model=AssetOut)
 async def confirm_upload(
-    asset_id: str, body: ConfirmUploadBody, user: dict = Depends(get_current_user)
+    asset_id: str,
+    _body: ConfirmUploadBody,
+    user: dict = Depends(get_current_user),
 ) -> AssetOut:
     db = get_db()
     doc = await db.assets.find_one({"id": asset_id, "user_id": user["id"]}, {"_id": 0})
@@ -95,23 +102,44 @@ async def confirm_upload(
             status_code=404,
             detail={"error": {"code": "resource.not_found", "message": "Asset not found"}},
         )
-    if not s3_service.object_exists(doc["s3_key"]):
+
+    storage = get_storage()
+    if not storage.exists(doc["storage_key"]):
         raise HTTPException(
             status_code=400,
             detail={"error": {"code": "asset.binary_missing", "message": "Upload not received yet"}},
         )
-    update: dict = {
-        "upload_status": UploadStatus.uploaded.value,
-        "size_bytes": s3_service.object_size(doc["s3_key"]),
-        "updated_at": utc_now(),
-    }
-    if body.duration_sec is not None:
-        update["duration_sec"] = body.duration_sec
-    if body.width is not None:
-        update["width"] = body.width
-    if body.height is not None:
-        update["height"] = body.height
-    await db.assets.update_one({"id": asset_id}, {"$set": update})
+
+    actual_size = storage.size(doc["storage_key"])
+    if actual_size <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "asset.empty", "message": "Uploaded file is empty"}},
+        )
+
+    # Confirmation is idempotent: do not enqueue duplicate processing jobs.
+    if doc.get("upload_status") == UploadStatus.uploaded.value and doc.get("processing_job_id"):
+        fresh = await db.assets.find_one({"id": asset_id}, {"_id": 0})
+        return _to_out(fresh)
+
+    job = await job_service.enqueue(
+        user_id=user["id"],
+        project_id=doc.get("project_id"),
+        asset_id=asset_id,
+        job_type=JobType.media_probe,
+    )
+    await db.assets.update_one(
+        {"id": asset_id, "user_id": user["id"]},
+        {
+            "$set": {
+                "upload_status": UploadStatus.uploaded.value,
+                "processing_status": "queued",
+                "processing_job_id": job["id"],
+                "size_bytes": actual_size,
+                "updated_at": utc_now(),
+            }
+        },
+    )
     fresh = await db.assets.find_one({"id": asset_id}, {"_id": 0})
     return _to_out(fresh)
 
@@ -126,26 +154,28 @@ async def list_assets(
     user: dict = Depends(get_current_user),
 ) -> AssetListOut:
     db = get_db()
-    flt: dict = {"user_id": user["id"]}
+    query: dict = {"user_id": user["id"]}
     if kind:
-        flt["kind"] = kind.value
+        query["kind"] = kind.value
     if project_id:
-        flt["project_id"] = project_id
+        query["project_id"] = project_id
     if tag:
-        flt["tags"] = tag
+        query["tags"] = tag
     if q:
-        flt["filename"] = {"$regex": q, "$options": "i"}
-    cursor = db.assets.find(flt, {"_id": 0}).sort("created_at", -1).limit(limit + 1)
+        query["filename"] = {"$regex": q, "$options": "i"}
+
+    cursor = db.assets.find(query, {"_id": 0}).sort("created_at", -1).limit(limit + 1)
     docs = await cursor.to_list(limit + 1)
     has_more = len(docs) > limit
     docs = docs[:limit]
-    return AssetListOut(items=[_to_out(d) for d in docs], has_more=has_more)
+    return AssetListOut(items=[_to_out(doc) for doc in docs], has_more=has_more)
 
 
 @router.get("/{asset_id}", response_model=AssetOut)
 async def get_asset(asset_id: str, user: dict = Depends(get_current_user)) -> AssetOut:
-    db = get_db()
-    doc = await db.assets.find_one({"id": asset_id, "user_id": user["id"]}, {"_id": 0})
+    doc = await get_db().assets.find_one(
+        {"id": asset_id, "user_id": user["id"]}, {"_id": 0}
+    )
     if not doc:
         raise HTTPException(
             status_code=404,
@@ -164,6 +194,7 @@ async def update_asset(
         update["filename"] = body.filename
     if body.tags is not None:
         update["tags"] = body.tags
+
     result = await db.assets.update_one(
         {"id": asset_id, "user_id": user["id"]}, {"$set": update}
     )
@@ -185,29 +216,41 @@ async def delete_asset(asset_id: str, user: dict = Depends(get_current_user)) ->
             status_code=404,
             detail={"error": {"code": "resource.not_found", "message": "Asset not found"}},
         )
-    s3_service.delete_object(doc["s3_key"])
-    await db.assets.delete_one({"id": asset_id})
+
+    get_storage().delete(doc["storage_key"])
+    await db.jobs.delete_many({"asset_id": asset_id, "user_id": user["id"]})
+    await db.assets.delete_one({"id": asset_id, "user_id": user["id"]})
     return {"ok": True}
 
 
-# ---------- Stub storage HTTP endpoints (replace with S3 in prod) ----------
-# Path-style URL: /api/v1/_stub-storage/<full/s3/key>
-# PUT writes the binary, GET streams it back. Public (signed via URL in prod).
-stub_router = APIRouter(prefix="/_stub-storage", tags=["stub-storage"])
+local_storage_router = APIRouter(prefix="/_local-storage", tags=["local-storage"])
 
 
-@stub_router.put("/{s3_key:path}")
-async def stub_put(s3_key: str, request: Request) -> dict:
+def _local_storage() -> LocalStorage:
+    storage = get_storage()
+    if not isinstance(storage, LocalStorage):
+        raise HTTPException(status_code=404, detail="Local storage endpoint disabled")
+    return storage
+
+
+@local_storage_router.put("/{storage_key:path}")
+async def local_put(storage_key: str, request: Request) -> dict:
     body = await request.body()
     if not body:
-        raise HTTPException(status_code=400, detail={"error": {"code": "upload.empty", "message": "Empty body"}})
-    written = s3_service.write_object(s3_key, body)
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "upload.empty", "message": "Empty body"}},
+        )
+    written = _local_storage().write_local(storage_key, body)
     return {"ok": True, "bytes": written}
 
 
-@stub_router.get("/{s3_key:path}")
-async def stub_get(s3_key: str) -> Response:
-    p: Path = s3_service.stream_path(s3_key)
-    if not p.is_file():
-        raise HTTPException(status_code=404, detail={"error": {"code": "asset.not_found", "message": "Object not found"}})
-    return FileResponse(p)
+@local_storage_router.get("/{storage_key:path}")
+async def local_get(storage_key: str) -> Response:
+    path: Path = _local_storage().local_path(storage_key)
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "asset.not_found", "message": "Object not found"}},
+        )
+    return FileResponse(path)

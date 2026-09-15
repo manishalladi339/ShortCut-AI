@@ -1,6 +1,6 @@
 """Asset Pydantic schemas."""
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -11,7 +11,7 @@ class PresignUploadBody(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     mime_type: str = Field(min_length=1, max_length=100)
     kind: AssetKind
-    size_bytes: int = Field(ge=1, le=1024 * 1024 * 1024)  # 1 byte – 1 GB
+    size_bytes: int = Field(ge=1, le=5 * 1024 * 1024 * 1024)
     project_id: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
 
@@ -20,14 +20,13 @@ class PresignUploadOut(BaseModel):
     asset_id: str
     upload_url: str
     upload_headers: dict
-    s3_key: str
+    storage_key: str
     expires_at: datetime
 
 
 class ConfirmUploadBody(BaseModel):
-    duration_sec: Optional[float] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
+    """The server probes metadata asynchronously; client values are not trusted."""
+    pass
 
 
 class AssetUpdate(BaseModel):
@@ -43,16 +42,24 @@ class AssetOut(BaseModel):
     mime_type: str
     kind: AssetKind
     size_bytes: int
+
     duration_sec: Optional[float] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    storage_type: str = "s3"
-    s3_bucket: str
-    s3_key: str
-    s3_url: Optional[str] = None  # signed GET URL, ephemeral
+    media_metadata: dict[str, Any] = Field(default_factory=dict)
+    derivatives: dict[str, Any] = Field(default_factory=dict)
+
+    storage_type: str
+    storage_bucket: str
+    storage_key: str
+    download_url: Optional[str] = None
+
     upload_status: UploadStatus
+    processing_status: str = "pending"
+    processing_job_id: Optional[str] = None
+
     is_watermarked: bool = False
-    language: Optional[str] = "en"
+    language: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
