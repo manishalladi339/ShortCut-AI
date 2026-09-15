@@ -39,6 +39,7 @@ class RenderClip(BaseModel):
     duration: int = Field(gt=0)
     source_start: int = Field(ge=0)
     source_duration: int = Field(gt=0)
+    loop_source: bool = False
     playback_rate: float = Field(gt=0)
     volume: float = Field(ge=0)
     transition_in: RenderTransition | None = None
