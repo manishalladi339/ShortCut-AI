@@ -114,6 +114,18 @@ class Settings:
         "OPENAI_API_BASE", "https://api.openai.com/v1"
     )
 
+    # Transactional email for password-reset delivery.
+    PASSWORD_RESET_EMAIL_PROVIDER: str = os.environ.get(
+        "PASSWORD_RESET_EMAIL_PROVIDER", "disabled"
+    ).strip().lower()
+    PASSWORD_RESET_URL_TEMPLATE: str = os.environ.get(
+        "PASSWORD_RESET_URL_TEMPLATE", ""
+    )
+    RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
+    PASSWORD_RESET_FROM_EMAIL: str = os.environ.get(
+        "PASSWORD_RESET_FROM_EMAIL", ""
+    )
+
     EMERGENT_AUTH_SESSION_URL: str = os.environ.get(
         "EMERGENT_AUTH_SESSION_URL",
         "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
@@ -170,6 +182,21 @@ class Settings:
             if uses_openai and not self.OPENAI_API_KEY:
                 raise RuntimeError(
                     "OPENAI_API_KEY is required for configured production AI providers"
+                )
+
+            if self.PASSWORD_RESET_EMAIL_PROVIDER != "resend":
+                raise RuntimeError(
+                    "Production PASSWORD_RESET_EMAIL_PROVIDER must be 'resend'"
+                )
+            if not self.RESEND_API_KEY:
+                raise RuntimeError("Production RESEND_API_KEY is required")
+            if not self.PASSWORD_RESET_FROM_EMAIL:
+                raise RuntimeError(
+                    "Production PASSWORD_RESET_FROM_EMAIL is required"
+                )
+            if "{token}" not in self.PASSWORD_RESET_URL_TEMPLATE:
+                raise RuntimeError(
+                    "Production PASSWORD_RESET_URL_TEMPLATE must contain {token}"
                 )
 
 
