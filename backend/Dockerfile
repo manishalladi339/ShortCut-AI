@@ -23,6 +23,6 @@ USER shortcut
 EXPOSE 8001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD-SHELL curl --fail --silent "http://127.0.0.1:${PORT:-8001}/api/v1/live" >/dev/null || exit 1
+  CMD curl --fail --silent "http://127.0.0.1:${PORT:-8001}/api/v1/live" >/dev/null || exit 1
 
 CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8001} --proxy-headers --forwarded-allow-ips='*'"]
