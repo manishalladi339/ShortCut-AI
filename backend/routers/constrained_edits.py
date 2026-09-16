@@ -22,6 +22,7 @@ from services.constrained_editing import (
 )
 from services.creator_memory import refresh_creator_memory
 from services.semantic_broll_editing import build_semantic_broll_replacements
+from services.qa_fix_planning import build_qa_fix_proposal
 
 router = APIRouter(prefix="/projects", tags=["constrained-edits"])
 
@@ -94,6 +95,74 @@ async def list_constrained_edits(
         {"_id": 0},
     ).sort("created_at", -1).limit(50).to_list(50)
     return [ConstrainedEditProposalOut(**doc) for doc in docs]
+
+
+@router.post(
+    "/{project_id}/exports/{export_id}/qa-fix-proposal",
+    response_model=ConstrainedEditProposalOut,
+)
+async def create_qa_fix_proposal(
+    project_id: str,
+    export_id: str,
+    user: dict = Depends(get_current_user),
+) -> ConstrainedEditProposalOut:
+    db = get_db()
+    state = await _get_or_create_state(project_id, user["id"])
+    export_doc = await db.exports.find_one(
+        {
+            "id": export_id,
+            "project_id": project_id,
+            "user_id": user["id"],
+        },
+        {"_id": 0},
+    )
+    if not export_doc:
+        raise _error("qa_fix.export_not_found", "Export not found", 404)
+    if export_doc.get("status") != "completed" or not export_doc.get("qa_report"):
+        raise _error(
+            "qa_fix.export_not_ready",
+            "Export QA is not available yet",
+            409,
+        )
+    if int(export_doc.get("project_state_version") or 0) != int(state["version"]):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {
+                    "code": "qa_fix.stale_export",
+                    "message": (
+                        "The timeline changed after this export. Render the current "
+                        "ProjectState before building QA fixes."
+                    ),
+                    "export_version": export_doc.get("project_state_version"),
+                    "current_version": state["version"],
+                }
+            },
+        )
+
+    try:
+        proposal = build_qa_fix_proposal(
+            project_id=project_id,
+            user_id=user["id"],
+            state=state,
+            export_doc=export_doc,
+        )
+    except ValueError as exc:
+        raise _error("qa_fix.no_safe_fixes", str(exc)) from exc
+
+    now = utc_now()
+    proposal = {
+        "id": str(uuid.uuid4()),
+        **proposal,
+        "created_at": now,
+        "updated_at": now,
+        "applied_project_state_version": None,
+        "applied_operation_ids": [],
+        "skipped_operation_ids": [],
+        "source_export_id": export_id,
+    }
+    await db.ai_constrained_edit_proposals.insert_one(copy.deepcopy(proposal))
+    return ConstrainedEditProposalOut(**proposal)
 
 
 @router.post(
