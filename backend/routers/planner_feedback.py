@@ -11,6 +11,7 @@ from models.planner_feedback import (
     PlannerFeedbackRequest,
     PlannerMetricsOut,
 )
+from services.creator_memory import refresh_creator_memory
 
 router = APIRouter(prefix="/projects", tags=["planner-evaluation"])
 
@@ -70,6 +71,7 @@ async def submit_plan_feedback(
             }
         },
     )
+    await refresh_creator_memory(user_id=user["id"])
     return PlannerFeedbackOut(**doc)
 
 

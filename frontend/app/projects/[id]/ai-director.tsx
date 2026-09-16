@@ -450,6 +450,40 @@ export default function AIDirectorScreen() {
               </View>
             </View>
 
+            {plan.creator_memory_summary ? (
+              <>
+                <SectionTitle title="What ShortCut learned from you" />
+                <View style={styles.card}>
+                  <View style={styles.row}>
+                    <Ionicons name="finger-print-outline" color={colors.aiAccent} size={20} />
+                    <Text style={[typography.bodyMed, { color: colors.textHigh, flex: 1 }]}>
+                      Creator Memory
+                    </Text>
+                    <Text style={[typography.caption, { color: colors.textMedium }]}>
+                      {plan.creator_memory_evidence_count} signals
+                    </Text>
+                  </View>
+                  <Text style={[typography.body, { color: colors.textMedium, marginTop: spacing.sm }]}>
+                    {plan.creator_memory_summary}
+                  </Text>
+                  {plan.creator_memory_evidence_count > 0 ? (
+                    <View style={styles.topicWrap}>
+                      {creatorPreferenceLabels(plan.creator_memory_preferences).map((label) => (
+                        <View key={label} style={styles.topicPill}>
+                          <Text style={[typography.caption, { color: colors.textHigh }]}>
+                            {label}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  <Text style={[typography.caption, { color: colors.textLow, marginTop: spacing.md }]}>
+                    Adaptation is evidence-based and only strengthens as you make more editing decisions.
+                  </Text>
+                </View>
+              </>
+            ) : null}
+
             {plan.project_intelligence_summary ? (
               <>
                 <SectionTitle title="What ShortCut understood" />
@@ -789,6 +823,28 @@ function formatSeconds(value: number) {
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+
+function creatorPreferenceLabels(preferences: Record<string, any>): string[] {
+  const labels: string[] = [];
+  const captionStyle = preferences.caption_style ?? {};
+  if (captionStyle.preset) labels.push(`Captions: ${String(captionStyle.preset)}`);
+  if (captionStyle.size_scale && Number(captionStyle.size_scale) !== 1) {
+    labels.push(
+      Number(captionStyle.size_scale) < 1 ? "Smaller captions" : "Larger captions",
+    );
+  }
+  if (captionStyle.vertical_position) {
+    labels.push(`Captions: ${String(captionStyle.vertical_position)}`);
+  }
+  const broll = Number(preferences.broll_density_multiplier ?? 1);
+  if (broll < 1) labels.push("Less B-roll");
+  if (broll > 1) labels.push("More B-roll");
+  const music = Number(preferences.music_volume_multiplier ?? 1);
+  if (music < 0.95) labels.push("Quieter music");
+  if (music > 1.05) labels.push("Louder music");
+  return labels.slice(0, 6);
 }
 
 const styles = StyleSheet.create({

@@ -66,6 +66,11 @@ class AIEditPlanOut(BaseModel):
     project_intelligence_summary: str = ""
     project_topics: list[dict[str, Any]] = Field(default_factory=list)
     story_beats: list[StoryBeat] = Field(default_factory=list)
+    creator_memory_id: str | None = None
+    creator_memory_summary: str = ""
+    creator_memory_preferences: dict[str, Any] = Field(default_factory=dict)
+    creator_memory_confidence: dict[str, float] = Field(default_factory=dict)
+    creator_memory_evidence_count: int = Field(default=0, ge=0)
     audience_profile: dict[str, Any] = Field(default_factory=dict)
     narrative_summary: str = ""
     caption_suggestion: str = ""

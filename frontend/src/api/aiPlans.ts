@@ -52,6 +52,11 @@ export interface AIEditPlan {
   project_intelligence_summary: string;
   project_topics: Array<Record<string, any>>;
   story_beats: StoryBeat[];
+  creator_memory_id: string | null;
+  creator_memory_summary: string;
+  creator_memory_preferences: Record<string, any>;
+  creator_memory_confidence: Record<string, number>;
+  creator_memory_evidence_count: number;
   audience_profile: Record<string, any>;
   narrative_summary: string;
   caption_suggestion: string;

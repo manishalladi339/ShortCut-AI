@@ -11,6 +11,7 @@ from db.mongo import get_db
 from models.ai_plan import AIEditPlanOut, ApplyAIEditPlanRequest, CreateAIEditPlanRequest
 from models.project_state import ProjectStateOut
 from services.ai_edit_planner import build_plan
+from services.creator_memory import refresh_creator_memory
 from services.apply_ai_plan import apply_plan
 from services.music_ducking import apply_music_ducking_policy
 from services.planner_evaluation import evaluate_plan
@@ -122,4 +123,5 @@ async def apply_ai_edit_plan(
         replace_existing_video_clips=body.replace_existing_video_clips,
         operation_ids=body.operation_ids,
     )
+    await refresh_creator_memory(user_id=user["id"])
     return ProjectStateOut(**state)

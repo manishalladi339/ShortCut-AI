@@ -15,6 +15,11 @@ from services.broll_planning import (
     recommend_broll_for_highlight,
 )
 from services.conversation_pacing import rebalance_speaker_runs
+from services.creator_memory import (
+    creator_allows_broll,
+    creator_caption_style,
+    get_creator_memory,
+)
 from services.dead_air import compact_source_ranges
 from services.embeddings import get_embedding_provider
 from services.highlight_scoring import (
@@ -69,6 +74,8 @@ async def build_plan(
     body: CreateAIEditPlanRequest,
 ) -> dict:
     db = get_db()
+    creator_memory = await get_creator_memory(user_id=user_id)
+    learned_caption_style = creator_caption_style(creator_memory)
     records = await db.media_intelligence.find(
         {
             "project_id": project["id"],
@@ -347,7 +354,7 @@ async def build_plan(
     operations: list[dict] = []
     broll_recommendations: list[dict] = []
 
-    for candidate in ordered:
+    for candidate_index, candidate in enumerate(ordered):
         role = candidate.get("narrative_role") or "body"
         semantic_vector = candidate.pop("semantic_vector")
         record = records_by_id.get(candidate["intelligence_id"]) or {}
@@ -510,7 +517,12 @@ async def build_plan(
                 }
             )
 
-        if overlay_track and broll and broll_available_duration > 0:
+        if (
+            overlay_track
+            and broll
+            and broll_available_duration > 0
+            and creator_allows_broll(creator_memory, candidate_index)
+        ):
             best = broll[0]
             broll_asset = assets.get(best["asset_id"])
             source_range = bounded_broll_source_range(
@@ -637,6 +649,7 @@ async def build_plan(
                             "source": "transcript",
                             "narrative_role": role,
                             "speaker": candidate.get("primary_speaker"),
+                            **learned_caption_style,
                         },
                     },
                     "reason": (
@@ -752,6 +765,11 @@ async def build_plan(
         "project_intelligence_summary": project_intelligence.get("summary") or "",
         "project_topics": project_intelligence.get("topic_clusters") or [],
         "story_beats": story_beats,
+        "creator_memory_id": creator_memory.get("id"),
+        "creator_memory_summary": creator_memory.get("summary") or "",
+        "creator_memory_preferences": creator_memory.get("preferences") or {},
+        "creator_memory_confidence": creator_memory.get("confidence") or {},
+        "creator_memory_evidence_count": int(creator_memory.get("evidence_count") or 0),
         "audience_profile": narrative.get("audience_profile") or {},
         "narrative_summary": str(
             narrative.get("narrative_summary") or ""
