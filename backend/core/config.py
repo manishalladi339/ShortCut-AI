@@ -34,6 +34,14 @@ class Settings:
     MEDIA_PROBE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_PROBE_TIMEOUT_SEC", "30"))
     MEDIA_DERIVATIVE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_DERIVATIVE_TIMEOUT_SEC", "180"))
     RENDER_TIMEOUT_SEC: int = int(os.environ.get("RENDER_TIMEOUT_SEC", "900"))
+    AUDIO_MASTERING_ENABLED: bool = (
+        os.environ.get("AUDIO_MASTERING_ENABLED", "true").lower() == "true"
+    )
+    AUDIO_TARGET_LUFS: float = float(os.environ.get("AUDIO_TARGET_LUFS", "-14.0"))
+    AUDIO_TRUE_PEAK_DBTP: float = float(
+        os.environ.get("AUDIO_TRUE_PEAK_DBTP", "-1.5")
+    )
+    AUDIO_TARGET_LRA: float = float(os.environ.get("AUDIO_TARGET_LRA", "11.0"))
     WORKER_POLL_INTERVAL_SEC: float = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0"))
     JOB_LEASE_SECONDS: int = int(os.environ.get("JOB_LEASE_SECONDS", "1200"))
     MEDIA_INTELLIGENCE_TIMEOUT_SEC: int = int(
