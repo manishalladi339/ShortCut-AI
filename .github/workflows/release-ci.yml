@@ -1,0 +1,65 @@
+name: release-ci
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.prod.yml"
+      - ".env.production.example"
+      - ".github/workflows/release-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.prod.yml"
+      - ".env.production.example"
+      - ".github/workflows/release-ci.yml"
+
+jobs:
+  backend-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate production compose
+        run: |
+          cp .env.production.example .env.production
+          docker compose -f docker-compose.prod.yml config >/dev/null
+
+      - name: Build backend production image
+        run: docker build -t shortcut-ai-backend:ci ./backend
+
+      - name: Verify container liveness command exists
+        run: |
+          docker image inspect shortcut-ai-backend:ci             --format '{{json .Config.Healthcheck.Test}}' | grep -q '/api/v1/live'
+
+  frontend-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enable Yarn
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --non-interactive --ignore-scripts
+
+      - name: Validate frontend
+        run: yarn validate
+
+      - name: Build production web bundle
+        env:
+          EXPO_PUBLIC_BACKEND_URL: https://api.shortcut.example
+        run: yarn build:web
