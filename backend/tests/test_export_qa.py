@@ -100,3 +100,27 @@ def test_signal_parser_extracts_black_silence_and_volume():
     assert parsed["silence_segments"][0]["duration_sec"] == 3.5
     assert parsed["mean_volume_db"] == -18.2
     assert parsed["max_volume_db"] == -0.2
+
+
+
+def test_export_qa_degrades_signal_analysis_failure_to_warning(monkeypatch, tmp_path):
+    from services import export_qa
+
+    plan = _plan(
+        clips=[_clip("p1", asset_id="a", start=0, duration=10000)],
+    )
+
+    def fail(_path):
+        raise RuntimeError("signal analyzer unavailable")
+
+    monkeypatch.setattr(export_qa, "_run_signal_analysis", fail)
+    report = export_qa.analyze_export(tmp_path / "render.mp4", plan)
+
+    assert report["status"] == "warnings"
+    issue = next(
+        item
+        for item in report["issues"]
+        if item["code"] == "qa.signal_analysis_unavailable"
+    )
+    assert issue["severity"] == "warning"
+    assert report["error_count"] == 0
