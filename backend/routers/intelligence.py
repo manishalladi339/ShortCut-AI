@@ -29,10 +29,15 @@ async def _owned_ready_asset(asset_id: str, user_id: str) -> dict:
             status_code=409,
             detail={"error": {"code": "intelligence.asset_not_ready", "message": "Asset is still processing"}},
         )
-    if asset.get("kind") not in {"video", "audio"}:
+    if asset.get("kind") not in {"video", "audio", "image"}:
         raise HTTPException(
             status_code=422,
-            detail={"error": {"code": "intelligence.unsupported_asset", "message": "Only video/audio assets are supported"}},
+            detail={
+                "error": {
+                    "code": "intelligence.unsupported_asset",
+                    "message": "Only video/audio/image assets are supported",
+                }
+            },
         )
     return asset
 
