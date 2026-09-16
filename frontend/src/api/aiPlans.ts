@@ -18,6 +18,7 @@ export interface HighlightCandidate {
   dead_air_removed_sec: number;
   planned_duration_sec: number | null;
   visual_context: Record<string, any> | null;
+  reframe_suggestion: Record<string, any> | null;
 }
 
 export interface ProposedEditOperation {
@@ -81,6 +82,7 @@ export interface CreateAIEditPlanPayload {
   remove_dead_air?: boolean;
   rhythm_snap_broll?: boolean;
   broll_fade?: boolean;
+  smart_reframe?: boolean;
   music_asset_id?: string | null;
   music_volume?: number;
   music_ducking?: boolean;
