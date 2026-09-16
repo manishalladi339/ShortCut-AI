@@ -537,6 +537,14 @@ def _transition_operations(
 ) -> tuple[list[str], list[dict]]:
     """Plan visual entrance/exit transitions without changing timeline geometry."""
     lowered = instruction.lower()
+    if any(term in lowered for term in ("caption", "captions", "subtitle", "subtitles")):
+        return [], []
+    if (
+        any(term in lowered for term in ("music", "soundtrack", "audio bed"))
+        and not any(term in lowered for term in ("shot", "clip", "video", "b-roll", "broll", "overlay"))
+    ):
+        return [], []
+
     mentions_broll = any(term in lowered for term in ("b-roll", "broll", "b roll", "overlay"))
     remove = bool(
         re.search(
@@ -567,27 +575,27 @@ def _transition_operations(
         set_out = True
     elif mentions_fade:
         kind = "fade"
-        has_in = bool(re.search(r"\bfade\s+in\b|\bin\s+fade\b", lowered))
-        has_out = bool(re.search(r"\bfade\s+out\b|\bout\s+fade\b", lowered))
+        has_in = bool(re.search(r"\bin\b", lowered))
+        has_out = bool(re.search(r"\bout\b", lowered))
         set_in = has_in or not has_out
         set_out = has_out or not has_in
         mode = "fade_transition"
     else:
-        if re.search(r"\b(?:from\s+left|slide\s+(?:in\s+)?from\s+left)\b", lowered):
+        if re.search(r"\b(?:from\s+(?:the\s+)?left|slide\s+(?:in\s+)?from\s+(?:the\s+)?left)\b", lowered):
             kind = "slide_left"
-        elif re.search(r"\b(?:from\s+right|slide\s+(?:in\s+)?from\s+right)\b", lowered):
+        elif re.search(r"\b(?:from\s+(?:the\s+)?right|slide\s+(?:in\s+)?from\s+(?:the\s+)?right)\b", lowered):
             kind = "slide_right"
-        elif re.search(r"\b(?:from\s+bottom|slide\s+up)\b", lowered):
+        elif re.search(r"\b(?:from\s+(?:the\s+)?bottom|slide\s+up)\b", lowered):
             kind = "slide_up"
-        elif re.search(r"\b(?:from\s+top|slide\s+down)\b", lowered):
+        elif re.search(r"\b(?:from\s+(?:the\s+)?top|slide\s+down)\b", lowered):
             kind = "slide_down"
-        elif re.search(r"\b(?:to\s+left|out\s+left)\b", lowered):
+        elif re.search(r"\b(?:to\s+(?:the\s+)?left|out\s+left)\b", lowered):
             kind = "slide_left"
-        elif re.search(r"\b(?:to\s+right|out\s+right)\b", lowered):
+        elif re.search(r"\b(?:to\s+(?:the\s+)?right|out\s+right)\b", lowered):
             kind = "slide_right"
-        elif re.search(r"\b(?:to\s+top|out\s+up)\b", lowered):
+        elif re.search(r"\b(?:to\s+(?:the\s+)?top|out\s+up)\b", lowered):
             kind = "slide_up"
-        elif re.search(r"\b(?:to\s+bottom|out\s+down)\b", lowered):
+        elif re.search(r"\b(?:to\s+(?:the\s+)?bottom|out\s+down)\b", lowered):
             kind = "slide_down"
         else:
             raise ValueError(
@@ -595,7 +603,12 @@ def _transition_operations(
                 "slide up, or slide down."
             )
 
-        set_out = bool(re.search(r"\b(?:out|exit|to\s+(?:left|right|top|bottom))\b", lowered))
+        set_out = bool(
+            re.search(
+                r"\b(?:out|exit|to\s+(?:the\s+)?(?:left|right|top|bottom))\b",
+                lowered,
+            )
+        )
         set_in = not set_out
         mode = f"{kind}_{'out' if set_out else 'in'}"
 
