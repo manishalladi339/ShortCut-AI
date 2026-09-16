@@ -22,6 +22,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("shortcut.render-worker")
 
 
+def _worker_lease_seconds() -> int:
+    return max(settings.JOB_LEASE_SECONDS, settings.RENDER_TIMEOUT_SEC + 300)
+
+
 async def _recover_stale_exports() -> None:
     recovered = await job_service.recover_stale_jobs(JobType.render_export)
     if not recovered:
@@ -61,6 +65,7 @@ async def _progress(job: dict, progress: int) -> None:
         job["id"],
         progress,
         lease_token=job["lease_token"],
+        lease_seconds=_worker_lease_seconds(),
     )
     if not ok:
         raise RuntimeError("render job lease was lost")
@@ -90,7 +95,10 @@ async def _complete_already_rendered(job: dict, export: dict) -> bool:
 
 async def process_one() -> bool:
     await _recover_stale_exports()
-    job = await job_service.claim_next(JobType.render_export)
+    job = await job_service.claim_next(
+        JobType.render_export,
+        lease_seconds=_worker_lease_seconds(),
+    )
     if not job:
         return False
 
@@ -252,8 +260,6 @@ async def process_one() -> bool:
 
 
 async def run_forever() -> None:
-    from core.config import settings
-
     while True:
         did_work = await process_one()
         if not did_work:
