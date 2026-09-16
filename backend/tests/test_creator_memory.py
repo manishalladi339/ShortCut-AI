@@ -49,6 +49,7 @@ def test_memory_learns_caption_style_and_lower_broll_density():
                             "preset": "minimal",
                             "size_scale": 0.85,
                             "vertical_position": "lower",
+                            "animation": "pop",
                         },
                     ),
                     "reason": "Creator restyled captions",
@@ -77,9 +78,11 @@ def test_memory_learns_caption_style_and_lower_broll_density():
     assert memory["preferences"]["caption_style"] == {
         "preset": "minimal",
         "vertical_position": "lower",
+        "animation": "pop",
         "size_scale": 0.85,
     }
     assert creator_caption_style(memory)["preset"] == "minimal"
+    assert creator_caption_style(memory)["animation"] == "pop"
     assert creator_allows_broll(memory, 0) is True
     assert creator_allows_broll(memory, 1) is False
     assert "fewer B-roll inserts" in memory["summary"]

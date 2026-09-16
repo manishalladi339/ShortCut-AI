@@ -682,6 +682,12 @@ function SelectionInspector({
           <MetaChip label="Semantic replacement" />
         ) : null}
         {metadata.pacing_retimed ? <MetaChip label="Retimed" /> : null}
+        {!isClip && metadata.preset ? (
+          <MetaChip label={`Caption preset · ${titleCase(String(metadata.preset))}`} />
+        ) : null}
+        {!isClip && metadata.animation && metadata.animation !== "none" ? (
+          <MetaChip label={`Animation · ${titleCase(String(metadata.animation))}`} />
+        ) : null}
         {metadata.reframe ? (
           <MetaChip
             label={`Smart reframe · ${Math.round(

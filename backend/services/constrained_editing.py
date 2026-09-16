@@ -507,6 +507,60 @@ def _caption_operations(
         style_patch["vertical_position"] = "higher"
         style_reasons.append("move captions higher")
 
+    if re.search(
+        rf"\b(?:social|bold|punchy)\s+{caption_subject}\b|"
+        rf"\b{caption_subject}\s+(?:more\s+)?(?:social|bold|punchy)\b",
+        lowered,
+    ):
+        style_patch["preset"] = "social"
+        style_reasons.append("use a bold social caption preset")
+
+    animation: str | None = None
+    if (
+        re.search(
+            rf"\b(?:remove|disable|turn\s+off)\s+(?:the\s+)?(?:{caption_subject}\s+)?animation\b",
+            lowered,
+        )
+        or re.search(rf"\bstatic\s+{caption_subject}\b", lowered)
+        or re.search(
+            rf"\b(?:make\s+)?(?:the\s+)?{caption_subject}\s+static\b",
+            lowered,
+        )
+    ):
+        animation = "none"
+        style_reasons.append("disable caption animation")
+    elif (
+        re.search(
+            rf"\b(?:make\s+)?(?:the\s+)?{caption_subject}\s+(?:pop|bounce|punch)\b",
+            lowered,
+        )
+        or re.search(rf"\b(?:pop|bouncy|punchy)\s+{caption_subject}\b", lowered)
+        or re.search(rf"\banimated\s+{caption_subject}\b", lowered)
+    ):
+        animation = "pop"
+        style_reasons.append("use pop caption animation")
+    elif (
+        re.search(
+            rf"\b(?:slide|move)\s+(?:the\s+)?{caption_subject}\s+up\b",
+            lowered,
+        )
+        or re.search(rf"\b{caption_subject}\s+(?:slide|rise)\s+up\b", lowered)
+    ):
+        animation = "slide_up"
+        style_reasons.append("use slide-up caption animation")
+    elif (
+        re.search(
+            rf"\bfade\s+(?:the\s+)?{caption_subject}\s+in\b",
+            lowered,
+        )
+        or re.search(rf"\b{caption_subject}\s+(?:fade|fade\s+in)\b", lowered)
+    ):
+        animation = "fade"
+        style_reasons.append("use fade caption animation")
+
+    if animation is not None:
+        style_patch["animation"] = animation
+
     if style_patch:
         intents.append("restyle_captions")
         for cue in captions:
@@ -701,7 +755,7 @@ def build_constrained_proposal(
         raise ValueError(
             "Create With Me currently supports scoped pacing changes, diarized "
             "speaker removal with sequence-wide ripple, semantic B-roll "
-            "replacement/removal, caption restyling/removal, and music "
+            "replacement/removal, caption styling/animation/removal, and music "
             "volume/removal."
         )
 

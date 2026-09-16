@@ -79,6 +79,7 @@ def _constrained_signals(proposals: list[dict]) -> dict:
     caption_presets: list[str] = []
     caption_sizes: list[float] = []
     caption_positions: list[str] = []
+    caption_animations: list[str] = []
     caption_removals = 0
     broll_removals = 0
     music_removals = 0
@@ -99,6 +100,8 @@ def _constrained_signals(proposals: list[dict]) -> dict:
                         caption_presets.append(str(style["preset"]))
                     if style.get("vertical_position"):
                         caption_positions.append(str(style["vertical_position"]))
+                    if style.get("animation") is not None:
+                        caption_animations.append(str(style["animation"]))
                     if style.get("size_scale") is not None:
                         try:
                             caption_sizes.append(float(style["size_scale"]))
@@ -128,6 +131,7 @@ def _constrained_signals(proposals: list[dict]) -> dict:
         "caption_presets": caption_presets,
         "caption_sizes": caption_sizes,
         "caption_positions": caption_positions,
+        "caption_animations": caption_animations,
         "caption_removals": caption_removals,
         "broll_removals": broll_removals,
         "music_removals": music_removals,
@@ -169,6 +173,8 @@ def derive_creator_memory(
         caption_style["preset"] = _mode(signals["caption_presets"])
     if signals["caption_positions"]:
         caption_style["vertical_position"] = _mode(signals["caption_positions"])
+    if signals["caption_animations"]:
+        caption_style["animation"] = _mode(signals["caption_animations"])
     if signals["caption_sizes"]:
         caption_style["size_scale"] = round(
             median(signals["caption_sizes"]), 3
@@ -205,6 +211,7 @@ def derive_creator_memory(
     caption_evidence = (
         len(signals["caption_presets"])
         + len(signals["caption_positions"])
+        + len(signals["caption_animations"])
         + len(signals["caption_sizes"])
         + signals["caption_removals"]
         + optional["captions"]["total"]
@@ -338,7 +345,7 @@ def creator_caption_style(memory: dict) -> dict[str, Any]:
     return {
         key: value
         for key, value in style.items()
-        if key in {"preset", "vertical_position", "size_scale"}
+        if key in {"preset", "vertical_position", "size_scale", "animation"}
     }
 
 

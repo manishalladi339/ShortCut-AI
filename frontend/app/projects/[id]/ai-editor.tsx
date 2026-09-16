@@ -28,6 +28,8 @@ const EXAMPLES = [
   "Remove Speaker B",
   "Replace B-roll in the intro with factory footage",
   "Make the captions smaller in the first 10 seconds",
+  "Make the captions pop",
+  "Use bold social captions",
   "Remove B-roll from the intro",
   "Lower the music",
   "Remove captions from the ending",
@@ -129,7 +131,7 @@ export default function AIEditorScreen() {
       Alert.alert(
         "ShortCut kept your timeline unchanged",
         e?.message ??
-          "This instruction is not supported safely yet. Try scoped pacing, speaker removal, semantic B-roll replacement/removal, a caption change, or a music adjustment.",
+          "This instruction is not supported safely yet. Try scoped pacing, speaker removal, semantic B-roll replacement/removal, caption style/animation, or a music adjustment.",
       );
     } finally {
       setPlanning(false);
