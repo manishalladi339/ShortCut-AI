@@ -139,6 +139,13 @@ export default function ProjectDetail() {
             onPress={() => router.push({ pathname: "/library", params: { project_id: project.id } })}
             testID="project-upload-asset-button"
           />
+          <Button
+            label="Open Timeline"
+            variant="secondary"
+            onPress={() => router.push(`/projects/${project.id}/timeline` as any)}
+            testID="project-open-timeline-button"
+            iconLeft={<Ionicons name="git-compare-outline" size={18} color={colors.textHigh} />}
+          />
           {project.creation_mode === "create_for_me" ? (
             <>
               <Button

@@ -843,6 +843,14 @@ export default function AIDirectorScreen() {
                   iconLeft={<Ionicons name="open-outline" color={colors.textHigh} size={18} />}
                 />
               ) : null}
+
+              <Button
+                label="Review on timeline"
+                variant="secondary"
+                onPress={() => router.push(`/projects/${project.id}/timeline` as any)}
+                style={{ marginTop: spacing.sm }}
+                iconLeft={<Ionicons name="git-compare-outline" color={colors.textHigh} size={18} />}
+              />
             </View>
           </>
         ) : null}

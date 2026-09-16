@@ -35,16 +35,32 @@ const EXAMPLES = [
 
 export default function AIEditorScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const {
+    id,
+    instruction: initialInstruction,
+    scope_start: initialScopeStart,
+    scope_end: initialScopeEnd,
+  } = useLocalSearchParams<{
+    id: string;
+    instruction?: string;
+    scope_start?: string;
+    scope_end?: string;
+  }>();
 
   const [project, setProject] = useState<Project | null>(null);
   const [state, setState] = useState<ProjectState | null>(null);
   const [proposal, setProposal] = useState<ConstrainedEditProposal | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const [instruction, setInstruction] = useState("");
-  const [scopeStart, setScopeStart] = useState("");
-  const [scopeEnd, setScopeEnd] = useState("");
+  const [instruction, setInstruction] = useState(
+    typeof initialInstruction === "string" ? initialInstruction : "",
+  );
+  const [scopeStart, setScopeStart] = useState(
+    typeof initialScopeStart === "string" ? initialScopeStart : "",
+  );
+  const [scopeEnd, setScopeEnd] = useState(
+    typeof initialScopeEnd === "string" ? initialScopeEnd : "",
+  );
   const [loading, setLoading] = useState(true);
   const [planning, setPlanning] = useState(false);
   const [applying, setApplying] = useState(false);
