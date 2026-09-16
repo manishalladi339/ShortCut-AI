@@ -21,6 +21,7 @@ from core.security import (
 )
 from db.mongo import get_db
 from models.common import AuthProvider, SubscriptionTier
+from services.quota import quota_period
 from models.user import (
     AuthResponse,
     ForgotPasswordBody,
@@ -109,6 +110,7 @@ async def signup(body: SignupBody) -> AuthResponse:
         "subscription_status": "active",
         "monthly_project_count": 0,
         "monthly_project_limit": 3,
+        "quota_period": quota_period(),
         "onboarding_complete": False,
         "user_type": None,
         "niche": [],
@@ -215,6 +217,7 @@ async def google_login(body: GoogleAuthBody) -> AuthResponse:
             "subscription_status": "active",
             "monthly_project_count": 0,
             "monthly_project_limit": 3,
+            "quota_period": quota_period(),
             "onboarding_complete": False,
             "user_type": None,
             "niche": [],
@@ -278,17 +281,17 @@ async def forgot_password(body: ForgotPasswordBody) -> dict:
     user = await db.users.find_one({"email": email}, {"_id": 0, "id": 1})
     if user:
         token = secrets.token_urlsafe(32)
-        await db.password_resets.insert_one(
-            {
-                "id": str(uuid.uuid4()),
-                "user_id": user["id"],
-                "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-                "expires_at": utc_now() + timedelta(hours=1),
-                "used": False,
-                "created_at": utc_now(),
-                "_dev_token": token,  # surfaced for dev only; remove when email is wired
-            }
-        )
+        reset_doc = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+            "expires_at": utc_now() + timedelta(hours=1),
+            "used": False,
+            "created_at": utc_now(),
+        }
+        if settings.ENVIRONMENT in {"development", "test"}:
+            reset_doc["_dev_token"] = token
+        await db.password_resets.insert_one(reset_doc)
         await _audit(user["id"], "auth.password_reset_requested")
     return {"ok": True}
 
