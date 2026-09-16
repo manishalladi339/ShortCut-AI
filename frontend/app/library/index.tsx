@@ -85,7 +85,7 @@ export default function AssetsLibrary() {
       if (!ok) throw new Error("Upload failed");
 
       // 3) Confirm
-      await assetsApi.confirm(presign.asset_id, {});
+      await assetsApi.confirm(presign.asset_id);
       await load();
     } catch (e: any) {
       Alert.alert("Upload failed", e?.message ?? "Try again");
