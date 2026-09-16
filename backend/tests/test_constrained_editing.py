@@ -176,18 +176,18 @@ def test_lower_music_keeps_non_music_tracks_untouched():
     assert changed["sequences"][0]["tracks"][0]["clips"][0]["id"] == "primary"
 
 
-def test_unsupported_primary_cut_request_is_rejected():
-    try:
-        build_constrained_proposal(
-            project_id="project-1",
-            user_id="user-1",
-            state=_state(),
-            instruction="Make the first ten seconds faster",
-        )
-    except ValueError as exc:
-        assert "currently supports" in str(exc)
-    else:
-        raise AssertionError("unsupported primary-cut request should fail")
+def test_primary_cut_pacing_request_is_supported():
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=_state(),
+        instruction="Make the first ten seconds faster",
+    )
+    assert proposal["interpreted_intents"] == ["tighten_pacing"]
+    assert proposal["scope_start_sec"] == 0
+    assert proposal["scope_end_sec"] == 10
+    assert proposal["operations"][0]["operation"] == "retime_scope"
+    assert proposal["operations"][0]["payload"]["scope_end"] == 10000
 
 
 
