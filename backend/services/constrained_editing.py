@@ -50,6 +50,12 @@ def _overlaps(start: int, duration: int, scope_start: int, scope_end: int) -> bo
     return start < scope_end and end > scope_start
 
 
+def _contained(start: int, duration: int, scope_start: int, scope_end: int) -> bool:
+    """True only when mutating the whole item cannot leak outside approved scope."""
+    end = start + duration
+    return start >= scope_start and end <= scope_end
+
+
 def _derive_scope(
     *,
     instruction: str,
@@ -62,9 +68,10 @@ def _derive_scope(
     lowered = instruction.lower()
 
     if explicit_start_sec is not None or explicit_end_sec is not None:
-        start = float(explicit_start_sec or 0.0)
-        end = float(explicit_end_sec if explicit_end_sec is not None else total_sec)
-        return max(0.0, start), min(max(start + 0.001, end), total_sec)
+        start = min(max(0.0, float(explicit_start_sec or 0.0)), max(0.0, total_sec - 0.001))
+        requested_end = float(explicit_end_sec if explicit_end_sec is not None else total_sec)
+        end = min(max(start + 0.001, requested_end), total_sec)
+        return start, end
 
     first_match = re.search(
         r"(?:first|opening|intro(?:duction)?)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)",
@@ -121,7 +128,7 @@ def _caption_operations(
     captions = [
         cue
         for cue in sequence.get("captions") or []
-        if _overlaps(
+        if _contained(
             int(cue.get("start") or 0),
             int(cue.get("duration") or 0),
             scope_start,
@@ -214,7 +221,7 @@ def _broll_operations(
         if track.get("kind") != "overlay" or track.get("locked"):
             continue
         for clip in track.get("clips") or []:
-            if not _overlaps(
+            if not _contained(
                 int(clip.get("timeline_start") or 0),
                 int(clip.get("duration") or 0),
                 scope_start,
@@ -269,7 +276,7 @@ def _music_operations(
             metadata = clip.get("metadata") or {}
             if not metadata.get("music_bed"):
                 continue
-            if not _overlaps(
+            if not _contained(
                 int(clip.get("timeline_start") or 0),
                 int(clip.get("duration") or 0),
                 scope_start,
