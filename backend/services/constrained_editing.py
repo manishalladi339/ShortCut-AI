@@ -475,7 +475,11 @@ def _motion_operations(
     if not remove_motion and not any(
         (zoom_in, zoom_out, pan_left, pan_right, pan_up, pan_down)
     ):
-        if re.search(r"\b(?:add|give|use|subtle)\s+(?:some\s+)?motion\b", lowered):
+        if re.search(
+            r"\b(?:(?:add|give|use)\s+(?:some\s+)?(?:subtle\s+|gentle\s+)?motion|"
+            r"subtle\s+motion)\b",
+            lowered,
+        ):
             zoom_in = True
         else:
             return [], []
@@ -513,6 +517,14 @@ def _motion_operations(
             base_scale = float(transform.get("scale", 1.0))
             base_x = float(transform.get("position_x", 0.0))
             base_y = float(transform.get("position_y", 0.0))
+            metadata = clip.get("metadata") or {}
+
+            has_pan = any((pan_left, pan_right, pan_up, pan_down))
+            has_crop_slack = bool(metadata.get("reframe")) or base_scale >= 1.1
+            if has_pan and not has_crop_slack:
+                # Without source dimensions here, ShortCut cannot prove that moving
+                # an uncropped frame will not expose canvas. Prefer no edit.
+                continue
 
             if remove_motion:
                 keyframes: list[dict] = []
@@ -534,8 +546,13 @@ def _motion_operations(
                 elif zoom_out:
                     start_scale = min(10.0, base_scale * (1.0 + intensity))
 
-                x_offset = float(sequence.get("width") or 1080) * intensity * 0.75
-                y_offset = float(sequence.get("height") or 1920) * intensity * 0.45
+                x_offset = float(sequence.get("width") or 1080) * intensity * 0.30
+                y_offset = float(sequence.get("height") or 1920) * intensity * 0.20
+
+                if any((pan_left, pan_right, pan_up, pan_down)):
+                    # Grow the frame while moving it so a verified crop keeps
+                    # enough edge coverage throughout the pan.
+                    end_scale = max(end_scale, min(10.0, base_scale * (1.0 + intensity)))
 
                 # Camera-direction semantics: pan right moves the media left.
                 if pan_right:
