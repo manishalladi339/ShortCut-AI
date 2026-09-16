@@ -185,7 +185,7 @@ def test_unsupported_primary_cut_request_is_rejected():
             instruction="Make the first ten seconds faster",
         )
     except ValueError as exc:
-        assert "Primary story cuts are preserved" in str(exc)
+        assert "currently supports" in str(exc)
     else:
         raise AssertionError("unsupported primary-cut request should fail")
 
@@ -225,3 +225,175 @@ def test_local_music_request_does_not_change_a_full_length_music_bed():
         assert "no matching timeline items" in str(exc)
     else:
         raise AssertionError("localized music change must not leak outside scope")
+
+
+
+def _speaker_state():
+    state = _state()
+    sequence = state["sequences"][0]
+    video = next(track for track in sequence["tracks"] if track["id"] == "video")
+    video["clips"] = [
+        {
+            "id": "p1",
+            "asset_id": "a",
+            "timeline_start": 0,
+            "duration": 5000,
+            "source_start": 0,
+            "source_duration": 5000,
+            "metadata": {
+                "ai_plan_id": "plan",
+                "primary_speaker": "speaker_0",
+            },
+        },
+        {
+            "id": "p2",
+            "asset_id": "a",
+            "timeline_start": 5000,
+            "duration": 5000,
+            "source_start": 5000,
+            "source_duration": 5000,
+            "metadata": {
+                "ai_plan_id": "plan",
+                "primary_speaker": "speaker_1",
+            },
+        },
+        {
+            "id": "p3",
+            "asset_id": "a",
+            "timeline_start": 10000,
+            "duration": 5000,
+            "source_start": 10000,
+            "source_duration": 5000,
+            "metadata": {
+                "ai_plan_id": "plan",
+                "primary_speaker": "speaker_0",
+            },
+        },
+    ]
+    overlay = next(track for track in sequence["tracks"] if track["id"] == "overlay")
+    overlay["clips"] = [
+        {
+            "id": "speaker-b-broll",
+            "asset_id": "b",
+            "timeline_start": 6000,
+            "duration": 2500,
+            "source_start": 0,
+            "source_duration": 2500,
+            "metadata": {"ai_plan_id": "plan", "broll": True},
+        },
+        {
+            "id": "after-broll",
+            "asset_id": "b",
+            "timeline_start": 11000,
+            "duration": 2000,
+            "source_start": 2500,
+            "source_duration": 2000,
+            "metadata": {"ai_plan_id": "plan", "broll": True},
+        },
+    ]
+    audio = next(track for track in sequence["tracks"] if track["id"] == "audio")
+    audio["clips"][0]["duration"] = 15000
+    audio["clips"][0]["source_duration"] = 15000
+    sequence["captions"] = [
+        {
+            "id": "speaker-a-caption",
+            "start": 1000,
+            "duration": 3000,
+            "text": "Speaker A",
+            "style": {"source": "transcript", "ai_plan_id": "plan"},
+        },
+        {
+            "id": "speaker-b-caption",
+            "start": 5500,
+            "duration": 3500,
+            "text": "Speaker B",
+            "style": {"source": "transcript", "ai_plan_id": "plan"},
+        },
+        {
+            "id": "speaker-a-after",
+            "start": 11000,
+            "duration": 2500,
+            "text": "Speaker A returns",
+            "style": {"source": "transcript", "ai_plan_id": "plan"},
+        },
+    ]
+    return state
+
+
+def test_remove_speaker_b_ripples_all_synchronized_tracks():
+    state = _speaker_state()
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=state,
+        instruction="Remove Speaker B",
+    )
+    assert proposal["interpreted_intents"] == ["remove_speaker_1"]
+    assert len(proposal["operations"]) == 1
+    operation = proposal["operations"][0]
+    assert operation["operation"] == "remove_speaker_ripple"
+    assert operation["component"] == "story"
+    assert operation["payload"]["clip_ids"] == ["p2"]
+
+    changed = apply_constrained_operations(
+        state=state,
+        operations=proposal["operations"],
+    )
+    sequence = changed["sequences"][0]
+    video = next(track for track in sequence["tracks"] if track["id"] == "video")
+    assert [clip["id"] for clip in video["clips"]] == ["p1", "p3"]
+    assert [clip["timeline_start"] for clip in video["clips"]] == [0, 5000]
+
+    overlay = next(track for track in sequence["tracks"] if track["id"] == "overlay")
+    assert [clip["id"] for clip in overlay["clips"]] == ["after-broll"]
+    assert overlay["clips"][0]["timeline_start"] == 6000
+
+    audio = next(track for track in sequence["tracks"] if track["id"] == "audio")
+    assert audio["clips"][0]["duration"] == 10000
+    assert audio["clips"][0]["source_duration"] == 10000
+
+    assert [cue["id"] for cue in sequence["captions"]] == [
+        "speaker-a-caption",
+        "speaker-a-after",
+    ]
+    assert sequence["captions"][1]["start"] == 6000
+
+
+def test_speaker_removal_refuses_locked_track_that_would_lose_sync():
+    state = _speaker_state()
+    audio = next(
+        track for track in state["sequences"][0]["tracks"] if track["id"] == "audio"
+    )
+    audio["locked"] = True
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=state,
+        instruction="Remove Speaker B",
+    )
+
+    try:
+        apply_constrained_operations(
+            state=state,
+            operations=proposal["operations"],
+        )
+    except ValueError as exc:
+        assert "locked" in str(exc)
+        assert "lose sync" in str(exc)
+    else:
+        raise AssertionError("locked synchronized track must block ripple editing")
+
+
+def test_scoped_speaker_removal_only_selects_fully_contained_primary_clips():
+    state = _speaker_state()
+    try:
+        build_constrained_proposal(
+            project_id="project-1",
+            user_id="user-1",
+            state=state,
+            instruction="Remove Speaker B from the first 4 seconds",
+        )
+    except ValueError as exc:
+        assert "no matching timeline items" in str(exc)
+    else:
+        raise AssertionError("speaker outside the scope should not be removed")
