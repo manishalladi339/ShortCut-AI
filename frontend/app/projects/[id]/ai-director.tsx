@@ -17,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AIEditPlan, ProposedEditOperation, aiPlansApi } from "@/src/api/aiPlans";
 import { Asset, assetsApi } from "@/src/api/assets";
+import { constrainedEditsApi } from "@/src/api/constrainedEdits";
 import { ExportArtifact, exportsApi } from "@/src/api/exports";
 import { intelligenceApi, jobsApi } from "@/src/api/intelligence";
 import { Project, projectsApi } from "@/src/api/projects";
@@ -54,6 +55,7 @@ export default function AIDirectorScreen() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [statusText, setStatusText] = useState("");
   const [loading, setLoading] = useState(true);
+  const [qaFixPlanning, setQaFixPlanning] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -270,6 +272,23 @@ export default function AIDirectorScreen() {
       setStatusText("");
     } finally {
       setPhase("idle");
+    }
+  }
+
+  async function reviewQaFixes() {
+    if (!project || !latestExport) return;
+    setQaFixPlanning(true);
+    try {
+      await constrainedEditsApi.createQaFixProposal(project.id, latestExport.id);
+      router.push(`/projects/${project.id}/ai-editor` as any);
+    } catch (e: any) {
+      Alert.alert(
+        "Could not build QA fixes",
+        e?.message ??
+          "The timeline may have changed since this export or the remaining issues need manual review.",
+      );
+    } finally {
+      setQaFixPlanning(false);
     }
   }
 
@@ -794,6 +813,24 @@ export default function AIDirectorScreen() {
                       ) : null}
                     </View>
                   ))}
+
+                  {latestExport.qa_report.issues.some((issue) => issue.auto_fixable) ? (
+                    <Button
+                      label="Review safe QA fixes"
+                      variant="secondary"
+                      loading={qaFixPlanning}
+                      disabled={isBusy}
+                      onPress={reviewQaFixes}
+                      style={{ marginTop: spacing.sm }}
+                      iconLeft={
+                        <Ionicons
+                          name="construct-outline"
+                          color={colors.textHigh}
+                          size={18}
+                        />
+                      }
+                    />
+                  ) : null}
                 </View>
               ) : null}
 
