@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from core.config import settings
 from core.security import utc_now
 from db.mongo import close as close_mongo
 from db.mongo import get_db
@@ -172,44 +173,74 @@ async def process_one() -> bool:
             root = Path(tmp)
             suffix = Path(asset["filename"]).suffix
             with materialize(asset["storage_key"], suffix=suffix) as source:
-                audio = root / "speech.wav"
-                await _progress(job, 15)
-                extract_mono_16k(source, audio)
-                await _progress(job, 25)
-                try:
-                    silences = detect_silences(
-                        audio,
-                        duration_sec=asset.get("duration_sec"),
-                    )
-                except SilenceDetectionError as exc:
-                    logger.warning(
-                        "silence detection skipped for asset %s: %s",
-                        asset["id"],
-                        exc,
-                    )
-                    silences = []
-                try:
-                    rhythm_events = detect_rhythm_events(audio)
-                except RhythmDetectionError as exc:
-                    logger.warning(
-                        "rhythm detection skipped for asset %s: %s",
-                        asset["id"],
-                        exc,
-                    )
-                    rhythm_events = []
-                beat_grid = estimate_beat_grid(
-                    [event["time"] for event in rhythm_events]
-                )
-                await _progress(job, 40)
-                transcript = await get_transcription_provider().transcribe(audio)
                 scenes, visual_observations = [], []
-                if asset["kind"] == "video":
-                    await _progress(job, 55)
-                    scenes = detect_scenes(source, asset.get("duration_sec"))
-                    await _progress(job, 65)
-                    frames = extract_frames(source, root / "frames", scenes=scenes, duration_sec=asset.get("duration_sec"), max_frames=settings.MAX_VISION_FRAMES)
-                    if frames:
-                        visual_observations = await get_vision_provider().analyze_frames(frames)
+                if asset["kind"] == "image":
+                    # Still images are visual-only intelligence sources. They do
+                    # not pass through FFmpeg audio extraction/transcription.
+                    transcript = {
+                        "language": None,
+                        "text": "",
+                        "words": [],
+                        "segments": [],
+                        "speakers": [],
+                        "diarized": False,
+                        "provider": None,
+                        "model": None,
+                    }
+                    silences = []
+                    rhythm_events = []
+                    beat_grid = None
+                    await _progress(job, 45)
+                    visual_observations = await get_vision_provider().analyze_frames(
+                        [{"index": 0, "time": 0.0, "path": source}]
+                    )
+                    await _progress(job, 70)
+                else:
+                    audio = root / "speech.wav"
+                    await _progress(job, 15)
+                    extract_mono_16k(source, audio)
+                    await _progress(job, 25)
+                    try:
+                        silences = detect_silences(
+                            audio,
+                            duration_sec=asset.get("duration_sec"),
+                        )
+                    except SilenceDetectionError as exc:
+                        logger.warning(
+                            "silence detection skipped for asset %s: %s",
+                            asset["id"],
+                            exc,
+                        )
+                        silences = []
+                    try:
+                        rhythm_events = detect_rhythm_events(audio)
+                    except RhythmDetectionError as exc:
+                        logger.warning(
+                            "rhythm detection skipped for asset %s: %s",
+                            asset["id"],
+                            exc,
+                        )
+                        rhythm_events = []
+                    beat_grid = estimate_beat_grid(
+                        [event["time"] for event in rhythm_events]
+                    )
+                    await _progress(job, 40)
+                    transcript = await get_transcription_provider().transcribe(audio)
+                    if asset["kind"] == "video":
+                        await _progress(job, 55)
+                        scenes = detect_scenes(source, asset.get("duration_sec"))
+                        await _progress(job, 65)
+                        frames = extract_frames(
+                            source,
+                            root / "frames",
+                            scenes=scenes,
+                            duration_sec=asset.get("duration_sec"),
+                            max_frames=settings.MAX_VISION_FRAMES,
+                        )
+                        if frames:
+                            visual_observations = (
+                                await get_vision_provider().analyze_frames(frames)
+                            )
 
         words = _normalize_words(transcript.get("words") or [])
         segments = _normalize_segments(transcript.get("segments") or [])
