@@ -61,6 +61,9 @@ export default function AIEditorScreen() {
       if (latest && latest.project_state_version === s.version) {
         setProposal(latest);
         setSelectedIds(new Set(latest.operations.map((operation) => operation.id)));
+      } else {
+        setProposal(null);
+        setSelectedIds(new Set());
       }
     } catch (e: any) {
       Alert.alert("Could not open AI Editor", e?.message ?? "Try again");
@@ -137,6 +140,9 @@ export default function AIEditorScreen() {
         status: "applied",
         applied_project_state_version: nextState.version,
         applied_operation_ids: selectedOperations.map((operation) => operation.id),
+        skipped_operation_ids: proposal.operations
+          .filter((operation) => !selectedIds.has(operation.id))
+          .map((operation) => operation.id),
       });
       Alert.alert(
         "Edit applied",
