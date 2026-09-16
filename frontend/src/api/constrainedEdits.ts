@@ -10,7 +10,8 @@ export interface ConstrainedEditOperation {
     | "set_clip_properties"
     | "update_caption"
     | "remove_caption"
-    | "remove_speaker_ripple";
+    | "remove_speaker_ripple"
+    | "replace_broll";
   component: ConstrainedComponent;
   payload: Record<string, any>;
   reason: string;
