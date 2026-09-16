@@ -60,6 +60,26 @@ def _mean_vector(vectors: Iterable[list[float]]) -> list[float]:
     ]
 
 
+def _freshness(record: dict) -> str:
+    value = record.get("updated_at") or record.get("created_at")
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value or "")
+
+
+def latest_records_per_asset(records: list[dict]) -> list[dict]:
+    """Keep one deterministic latest completed intelligence record per source asset."""
+    latest: dict[str, dict] = {}
+    for record in records:
+        asset_id = str(record.get("asset_id") or "")
+        if not asset_id:
+            continue
+        current = latest.get(asset_id)
+        if current is None or _freshness(record) >= _freshness(current):
+            latest[asset_id] = record
+    return [latest[key] for key in sorted(latest)]
+
+
 def _semantic_rows(records: list[dict]) -> list[dict]:
     rows: list[dict] = []
     for record in records:
