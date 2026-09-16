@@ -53,6 +53,11 @@ export const constrainedEditsApi = {
     }),
   list: (projectId: string) =>
     api<ConstrainedEditProposal[]>(`/projects/${projectId}/constrained-edits`),
+  createQaFixProposal: (projectId: string, exportId: string) =>
+    api<ConstrainedEditProposal>(
+      `/projects/${projectId}/exports/${exportId}/qa-fix-proposal`,
+      { method: "POST" },
+    ),
   apply: (
     projectId: string,
     proposalId: string,
