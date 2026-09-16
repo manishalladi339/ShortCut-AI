@@ -202,6 +202,18 @@ export default function AIDirectorScreen() {
     }
   }
 
+  async function rebuildPlan() {
+    if (project && plan?.status === "proposed") {
+      await aiPlansApi
+        .feedback(project.id, plan.id, {
+          outcome: "rejected",
+          notes: "User requested a different plan before applying this proposal.",
+        })
+        .catch(() => undefined);
+    }
+    await generatePlan();
+  }
+
   function toggleOperation(operation: ProposedEditOperation) {
     if (!operation.id || operation.operation === "add_clip") return;
     setSelectedOperationIds((current) => {
@@ -232,8 +244,26 @@ export default function AIDirectorScreen() {
         replace_existing_video_clips: hasVideoClips(state),
         operation_ids: ids,
       });
+
+      const totalSelectable = plan.operations.filter((operation) => operation.id).length;
+      const outcome = ids.length === totalSelectable ? "accepted" : "modified";
+      aiPlansApi
+        .feedback(project.id, plan.id, {
+          outcome,
+          notes:
+            outcome === "modified"
+              ? "User skipped one or more optional AI operations before apply."
+              : "User applied the complete proposed plan.",
+        })
+        .catch(() => undefined);
+
       setState(nextState);
-      setPlan({ ...plan, status: "applied", applied_project_state_version: nextState.version });
+      setPlan({
+        ...plan,
+        status: "applied",
+        feedback_outcome: outcome,
+        applied_project_state_version: nextState.version,
+      });
       setStatusText("Edit applied. Ready to render.");
     } catch (e: any) {
       Alert.alert("Could not apply AI plan", e?.message ?? "Try again");
@@ -499,15 +529,23 @@ export default function AIDirectorScreen() {
             })}
 
             {canApply ? (
-              <Button
-                label="Apply approved edit"
-                variant="primary"
-                loading={phase === "applying"}
-                disabled={isBusy}
-                onPress={applyPlan}
-                style={{ marginTop: spacing.lg }}
-                iconLeft={<Ionicons name="checkmark-circle" color="#FFF" size={18} />}
-              />
+              <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
+                <Button
+                  label="Apply approved edit"
+                  variant="primary"
+                  loading={phase === "applying"}
+                  disabled={isBusy}
+                  onPress={applyPlan}
+                  iconLeft={<Ionicons name="checkmark-circle" color="#FFF" size={18} />}
+                />
+                <Button
+                  label="Build a different plan"
+                  variant="secondary"
+                  disabled={isBusy}
+                  onPress={rebuildPlan}
+                  iconLeft={<Ionicons name="refresh" color={colors.textHigh} size={18} />}
+                />
+              </View>
             ) : null}
           </>
         ) : null}
