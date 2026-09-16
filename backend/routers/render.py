@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pymongo.errors import DuplicateKeyError
 
 from core.deps import get_current_user
 from core.security import utc_now
@@ -139,7 +140,6 @@ async def create_export(
             "project_state_version": plan.project_state_version,
             "preset": body.preset,
             "status": {"$in": ["queued", "rendering"]},
-            "active": True,
         },
         {"_id": 0},
         sort=[("created_at", -1)],
@@ -179,7 +179,43 @@ async def create_export(
         "created_at": now,
         "updated_at": now,
     }
-    await db.exports.insert_one(doc)
+    try:
+        await db.exports.insert_one(doc)
+    except DuplicateKeyError:
+        # Another request won the active-export unique index after our initial
+        # read. Remove our still-unclaimed orphan job when possible and return
+        # the winning export instead of surfacing a 500.
+        await db.jobs.delete_one(
+            {
+                "id": job["id"],
+                "status": "queued",
+                "attempt": 0,
+            }
+        )
+        existing = await db.exports.find_one(
+            {
+                "user_id": user["id"],
+                "project_id": project_id,
+                "sequence_id": plan.sequence_id,
+                "project_state_version": plan.project_state_version,
+                "preset": body.preset,
+                "status": {"$in": ["queued", "rendering"]},
+            },
+            {"_id": 0},
+            sort=[("created_at", -1)],
+        )
+        if existing:
+            existing = await _reconcile_export_from_job(existing)
+            return _export_out(existing)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {
+                    "code": "render.request_race",
+                    "message": "Another render request changed state; retry the export.",
+                }
+            },
+        )
     return _export_out(doc)
 
 
