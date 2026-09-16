@@ -16,7 +16,7 @@ from pathlib import Path
 from core.security import utc_now
 from db.mongo import close as close_mongo
 from db.mongo import get_db
-from models.job import JobType
+from models.job import JobStatus, JobType
 from services import job_service
 from services.media_derivatives import MediaDerivativeError, generate as generate_derivatives
 from services.media_probe import MediaProbeError, probe
@@ -24,6 +24,41 @@ from services.storage import get_storage, materialize
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("shortcut.media-worker")
+
+
+async def _recover_stale_assets() -> None:
+    recovered = await job_service.recover_stale_jobs(JobType.media_probe)
+    for job in recovered:
+        asset_id = job.get("asset_id")
+        if not asset_id:
+            continue
+        status = (
+            "queued"
+            if job["recovered_status"] == JobStatus.queued.value
+            else "failed"
+        )
+        await get_db().assets.update_one(
+            {
+                "id": asset_id,
+                "processing_status": {"$ne": "ready"},
+            },
+            {
+                "$set": {
+                    "processing_status": status,
+                    "updated_at": utc_now(),
+                }
+            },
+        )
+
+
+async def _progress(job: dict, progress: int) -> None:
+    ok = await job_service.set_progress(
+        job["id"],
+        progress,
+        lease_token=job["lease_token"],
+    )
+    if not ok:
+        raise RuntimeError("media job lease was lost")
 
 
 async def _sync_asset_failure(job: dict, final: bool) -> None:
@@ -39,6 +74,7 @@ async def _sync_asset_failure(job: dict, final: bool) -> None:
 
 
 async def process_one() -> bool:
+    await _recover_stale_assets()
     job = await job_service.claim_next(JobType.media_probe)
     if not job:
         return False
@@ -53,19 +89,19 @@ async def process_one() -> bool:
             {"id": asset["id"]},
             {"$set": {"processing_status": "processing", "updated_at": utc_now()}},
         )
-        await job_service.set_progress(job["id"], 20)
+        await _progress(job, 20)
 
         suffix = Path(asset["filename"]).suffix
         with materialize(asset["storage_key"], suffix=suffix) as local_path:
             metadata = probe(local_path)
-            await job_service.set_progress(job["id"], 45)
+            await _progress(job, 45)
             derivatives = generate_derivatives(
                 source_path=local_path,
                 asset=asset,
                 storage=get_storage(),
             )
 
-        await job_service.set_progress(job["id"], 80)
+        await _progress(job, 80)
         await db.assets.update_one(
             {"id": asset["id"]},
             {
@@ -81,21 +117,39 @@ async def process_one() -> bool:
                 }
             },
         )
-        await job_service.succeed(job["id"], {"media_metadata": metadata, "derivatives": derivatives})
+        owned = await job_service.succeed(
+            job["id"],
+            {"media_metadata": metadata, "derivatives": derivatives},
+            lease_token=job["lease_token"],
+        )
+        if not owned:
+            logger.warning("media job %s lost its lease before completion", job["id"])
         logger.info("processed asset %s", asset["id"])
         return True
 
     except (MediaProbeError, MediaDerivativeError) as exc:
         final = job["attempt"] >= job["max_attempts"]
-        await job_service.fail(job, code="media.probe_failed", message=str(exc))
-        await _sync_asset_failure(job, final)
+        owned = await job_service.fail(
+            job,
+            code="media.probe_failed",
+            message=str(exc),
+            lease_token=job.get("lease_token"),
+        )
+        if owned:
+            await _sync_asset_failure(job, final)
         logger.warning("media probe failed for job %s: %s", job["id"], exc)
         return True
 
     except Exception as exc:
         final = job["attempt"] >= job["max_attempts"]
-        await job_service.fail(job, code="media.processing_failed", message=str(exc))
-        await _sync_asset_failure(job, final)
+        owned = await job_service.fail(
+            job,
+            code="media.processing_failed",
+            message=str(exc),
+            lease_token=job.get("lease_token"),
+        )
+        if owned:
+            await _sync_asset_failure(job, final)
         logger.exception("media processing failed for job %s", job["id"])
         return True
 
