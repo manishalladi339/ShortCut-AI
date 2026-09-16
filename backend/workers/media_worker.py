@@ -26,6 +26,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("shortcut.media-worker")
 
 
+async def _complete_already_processed(job: dict, asset: dict) -> bool:
+    if (
+        asset.get("processing_status") != "ready"
+        or asset.get("processing_job_id") != job["id"]
+    ):
+        return False
+    owned = await job_service.succeed(
+        job["id"],
+        {
+            "media_metadata": asset.get("media_metadata") or {},
+            "derivatives": asset.get("derivatives") or {},
+            "reconciled_existing_asset": True,
+        },
+        lease_token=job["lease_token"],
+    )
+    if not owned:
+        logger.warning("lost lease while reconciling asset %s", asset["id"])
+    return True
+
+
 async def _recover_stale_assets() -> None:
     recovered = await job_service.recover_stale_jobs(JobType.media_probe)
     for job in recovered:
@@ -85,6 +105,9 @@ async def process_one() -> bool:
         if not asset:
             raise RuntimeError("asset no longer exists")
 
+        if await _complete_already_processed(job, asset):
+            return True
+
         await db.assets.update_one(
             {"id": asset["id"]},
             {"$set": {"processing_status": "processing", "updated_at": utc_now()}},
@@ -102,6 +125,8 @@ async def process_one() -> bool:
             )
 
         await _progress(job, 80)
+        # Extend/fence ownership immediately before durable completion writes.
+        await _progress(job, 95)
         await db.assets.update_one(
             {"id": asset["id"]},
             {
