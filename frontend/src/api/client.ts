@@ -1,7 +1,8 @@
 /** Minimal API client. Bearer token attached when present. */
 import { storage } from "@/src/utils/storage";
 
-const BASE = `${process.env.EXPO_PUBLIC_BACKEND_URL ?? ""}/api/v1`;
+const BACKEND_ORIGIN = (process.env.EXPO_PUBLIC_BACKEND_URL ?? "").replace(/\/$/, "");
+const BASE = `${BACKEND_ORIGIN}/api/v1`;
 
 export const TOKEN_KEY = "shortcut.access_token";
 export const REFRESH_KEY = "shortcut.refresh_token";
