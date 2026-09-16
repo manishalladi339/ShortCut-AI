@@ -450,6 +450,64 @@ export default function AIDirectorScreen() {
               </View>
             </View>
 
+            {plan.project_intelligence_summary ? (
+              <>
+                <SectionTitle title="What ShortCut understood" />
+                <View style={styles.card}>
+                  <View style={styles.row}>
+                    <Ionicons name="git-network-outline" color={colors.aiAccent} size={20} />
+                    <Text style={[typography.bodyMed, { color: colors.textHigh, flex: 1 }]}>
+                      Whole-project intelligence
+                    </Text>
+                  </View>
+                  <Text style={[typography.body, { color: colors.textMedium, marginTop: spacing.sm }]}>
+                    {plan.project_intelligence_summary}
+                  </Text>
+                  {plan.project_topics.length > 0 ? (
+                    <View style={styles.topicWrap}>
+                      {plan.project_topics.slice(0, 6).map((topic, index) => (
+                        <View key={String(topic.id ?? index)} style={styles.topicPill}>
+                          <Text style={[typography.caption, { color: colors.textHigh }]}>
+                            {String(topic.label ?? `Topic ${index + 1}`)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              </>
+            ) : null}
+
+            {plan.story_beats.length > 0 ? (
+              <>
+                <SectionTitle title="Story blueprint" />
+                <Text style={[typography.caption, { color: colors.textMedium, marginBottom: spacing.sm }]}>
+                  ShortCut structures the story first, then grounds each beat in exact source moments.
+                </Text>
+                {plan.story_beats.map((beat) => (
+                  <View key={beat.id} style={styles.storyCard}>
+                    <View style={styles.storyTop}>
+                      <View style={styles.rolePill}>
+                        <Text style={[typography.caption, { color: colors.aiAccent }]}>
+                          {beat.role.toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text style={[typography.caption, { color: colors.textMedium }]}>
+                        {beat.target_duration_sec.toFixed(1)}s · {beat.evidence_keys.length} source{beat.evidence_keys.length === 1 ? "" : "s"}
+                      </Text>
+                    </View>
+                    <Text style={[typography.h3, { color: colors.textHigh, marginTop: spacing.sm }]}>
+                      {beat.title}
+                    </Text>
+                    <Text style={[typography.body, { color: colors.textMedium, marginTop: spacing.xs }]}>
+                      {beat.purpose}
+                    </Text>
+                  </View>
+                ))}
+              </>
+            ) : null}
+
+            <SectionTitle title="Grounded source moments" />
             {plan.candidates.map((candidate, index) => (
               <View
                 key={`${candidate.asset_id}-${candidate.unit_index}-${index}`}
@@ -856,6 +914,20 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: radius.pill,
     backgroundColor: colors.aiAccentMuted,
+  },
+  topicWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  topicPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   operationCard: {
     flexDirection: "row",

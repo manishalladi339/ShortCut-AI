@@ -41,6 +41,16 @@ class ProposedEditOperation(BaseModel):
     reason: str
 
 
+class StoryBeat(BaseModel):
+    id: str
+    role: str
+    title: str
+    purpose: str
+    target_duration_sec: float = Field(gt=0)
+    evidence_keys: list[str] = Field(default_factory=list)
+    topic_ids: list[str] = Field(default_factory=list)
+
+
 class AIEditPlanOut(BaseModel):
     id: str
     project_id: str
@@ -52,6 +62,10 @@ class AIEditPlanOut(BaseModel):
     candidates: list[HighlightCandidate] = Field(default_factory=list)
     operations: list[ProposedEditOperation] = Field(default_factory=list)
     broll_recommendations: list[BrollRecommendation] = Field(default_factory=list)
+    project_intelligence_id: str | None = None
+    project_intelligence_summary: str = ""
+    project_topics: list[dict[str, Any]] = Field(default_factory=list)
+    story_beats: list[StoryBeat] = Field(default_factory=list)
     audience_profile: dict[str, Any] = Field(default_factory=dict)
     narrative_summary: str = ""
     caption_suggestion: str = ""

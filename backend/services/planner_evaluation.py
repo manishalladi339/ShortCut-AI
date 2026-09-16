@@ -157,6 +157,22 @@ def evaluate_plan(plan: dict) -> dict:
             if style.get("source") != "transcript":
                 grounded = False
 
+    story_beats = plan.get("story_beats") or []
+    story_evidence_keys = [
+        key
+        for beat in story_beats
+        for key in (beat.get("evidence_keys") or [])
+    ]
+    valid_story_keys = {
+        f"{item['asset_id']}:{item['unit_index']}"
+        for item in candidates
+    }
+    story_beats_grounded = (
+        all(key in valid_story_keys for key in story_evidence_keys)
+        and len(story_evidence_keys) == len(set(story_evidence_keys))
+        and set(story_evidence_keys) == valid_story_keys
+    ) if candidates else not story_evidence_keys
+
     primary_clip_part_count = sum(
         1
         for operation in operations
@@ -211,6 +227,9 @@ def evaluate_plan(plan: dict) -> dict:
         "payoff_present": "payoff" in roles,
         "all_operations_grounded": grounded,
         "candidate_count": len(candidates),
+        "story_beat_count": len(story_beats),
+        "story_beats_grounded": story_beats_grounded,
+        "project_topic_count": len(plan.get("project_topics") or []),
         "speaker_count": len(set(primary_speakers)),
         "speaker_switch_count": speaker_switches,
         "max_same_speaker_run": _max_speaker_run(candidates),

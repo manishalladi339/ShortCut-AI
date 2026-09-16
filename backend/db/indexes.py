@@ -57,6 +57,11 @@ async def ensure_indexes() -> None:
         [("project_id", 1), ("status", 1), ("updated_at", -1)]
     )
 
+    await db.project_intelligence.create_index("project_id", unique=True)
+    await db.project_intelligence.create_index(
+        [("user_id", 1), ("updated_at", -1)]
+    )
+
     await db.ai_edit_plans.create_index(
         [("user_id", 1), ("project_id", 1), ("created_at", -1)]
     )
