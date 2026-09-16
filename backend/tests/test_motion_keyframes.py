@@ -236,7 +236,7 @@ def test_scoped_push_in_starts_from_existing_smart_reframe():
         scope_start_sec=0,
         scope_end_sec=10,
     )
-    assert proposal["interpreted_intents"] == ["add_motion"]
+    assert proposal["interpreted_intents"] == ["push_in"]
     assert len(proposal["operations"]) == 1
     operation = proposal["operations"][0]
     assert operation["operation"] == "set_motion_keyframes"
