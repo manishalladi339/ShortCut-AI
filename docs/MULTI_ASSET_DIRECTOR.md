@@ -1,117 +1,114 @@
 # Multi-Asset Director Mode
 
-Multi-Asset Director Mode extends the existing grounded AI Director for projects
-containing many spoken and visual sources.
+Multi-Asset Director Mode builds a grounded longer-form story across multiple
+spoken-source assets while using any analyzed visual asset — including still images —
+as B-roll support.
 
-## Goal
+## Intended use
+
+Examples:
+- two interviews + customer testimonials + B-roll + old photos
+- founder interview + team footage + screen recordings + product images
+- multiple conversations that need to become one coherent documentary-style edit
 
 The mode is designed for prompts such as:
 
-> Here are several interviews, testimonials, B-roll clips, screen recordings, old
-> photos and music. Build a coherent founder story, preserve the strongest source
-> moments and use visual evidence to support the story.
+"Create a four-minute founder story. Open with the hardest moment, establish the
+problem, reveal the product halfway, use customers as proof, and end personally."
 
-It does not assign invented identities or claim that a source is an interview,
-testimonial or customer unless that information is explicitly present elsewhere.
+## Standard vs Multi-Asset
 
-## Story-source selection
+Standard mode keeps the short-form limits:
+- up to 300 seconds
+- up to 30 primary story clips
 
-Primary story moments still come from grounded transcript semantic units.
-
-Multi-Asset Mode adds deterministic constraints on top of relevance/highlight scoring:
-
-1. seed the story from distinct spoken-source assets;
-2. reward previously uncovered project topics;
-3. reward a new source asset;
-4. penalize repeated use as a source approaches its duration share cap;
-5. preserve per-asset non-overlap;
-6. preserve global target-duration and clip-count budgets.
-
-Default source constraints:
-
-- requested minimum spoken sources: 3
-- maximum requested duration share from one source: 55%
-
-If fewer spoken sources exist, the cap relaxes only as much as mathematically
-necessary so a valid cut can still be produced.
-
-## Long-form limits
-
-Standard Director Mode remains capped at:
-
-- 300 seconds
-- 30 primary clips
-
-Multi-Asset Director Mode supports:
-
+Multi-Asset mode supports:
 - up to 900 seconds
-- up to 80 primary clips
+- up to 80 primary story clips
+- configurable minimum source diversity
+- configurable maximum share from one spoken source
 
-The mobile UI automatically increases the clip budget for longer targets.
+The frontend currently defaults Multi-Asset plans to:
+- minimum 3 spoken sources when available
+- maximum 55% of story duration from one source
+- up to 60 primary moments
 
-## Director brief
+## Grounded selection
 
-Every multi-asset plan records a Director brief containing:
+Multi-Asset selection starts from the existing semantic/highlight candidate set.
 
-- objective
-- target duration
-- requested diversity constraints
-- analyzed asset count
-- selected spoken-source count
-- selected source IDs
-- covered project topic IDs
-- selected source mix
+It then adds explicit Director constraints:
+
+1. Seed the strongest viable moments from distinct source assets.
+2. Cap how much story duration one source can occupy.
+3. Reward uncovered project topics.
+4. Reward new source assets.
+5. Penalize repeated use of an already-dominant source.
+6. Preserve per-asset temporal non-overlap.
+7. Trim only to duration/diversity budgets; never invent source ranges.
+
+If too few spoken sources exist, the source-share cap relaxes only as much as is
+mathematically necessary to produce a usable story.
+
+## Story Director
+
+The existing Story Director still structures the selected grounded moments into:
+- hook
+- context
+- development
+- proof
+- payoff
+
+Multi-Asset Mode does not replace Story Director; it gives Story Director a stronger,
+source-diverse set of grounded evidence.
+
+## Director brief and Source Mix
+
+Every Multi-Asset plan stores a Director brief containing:
+- selected spoken asset IDs
+- source count
+- per-source selected duration
+- per-source selected moment count
+- covered topic IDs
 - visual-support asset IDs
-- a human-readable summary
+- project analyzed-asset count
+- requested diversity constraints
 
-The AI Director UI shows this before apply.
+AI Director displays the Source Mix before apply so the creator can see whether the
+story genuinely uses multiple inputs rather than trusting an opaque score.
 
-## Source mix
-
-For each selected spoken source, the plan reports:
-
-- source asset ID / filename
-- selected clip count
-- selected source duration
-- semantic-unit count
-- visual-observation count
-- source-local speaker count
-
-The role is deliberately descriptive: `primary_spoken_source`.
+No source is labeled as "founder", "customer", "expert", etc. unless that role exists
+as explicit grounded metadata. The initial release uses the neutral role
+"primary_spoken_source".
 
 ## Still images
 
-Still images are now valid visual-intelligence sources.
+Images are first-class visual intelligence sources.
 
-Image analysis:
+For an image:
+- Media Intelligence skips audio extraction/transcription.
+- Vision analyzes the image as one visual observation.
+- The visual description is embedded like video visual observations.
+- Semantic B-roll retrieval can choose it when relevant.
+- The planner creates a bounded hold duration on the overlay track.
+- The renderer loops the image input for the complete B-roll slot.
 
-- skips audio extraction/transcription;
-- runs a single frame-local vision observation;
-- embeds the grounded visual description;
-- makes the image eligible for semantic B-roll retrieval.
+Images do not become primary spoken story clips.
 
-When an image is selected as B-roll, ShortCut creates a bounded still-image hold
-(up to the normal B-roll duration target) and marks the overlay provenance with:
+## Trust and safety
 
-- `source_asset_kind: image`
-- `still_image_hold: true`
-
-## Trust and review
-
-Multi-Asset Mode still follows the same trust contract:
-
-- AI plans do not silently mutate ProjectState;
-- primary story operations stay required as one coherent cut;
-- optional B-roll/captions/music remain reviewable;
-- every source moment retains asset/intelligence/unit provenance;
-- ProjectState version fencing applies at plan apply time;
-- final render QA runs after export.
+Multi-Asset Mode retains the normal ShortCut contract:
+- exact ProjectState version
+- reviewable AI plan
+- exact source provenance
+- no silent timeline mutation
+- replace-existing-video requires explicit opt-in
+- visual recommendations are grounded in stored visual observations
+- speaker labels remain source-local
+- still-image use is visible in clip metadata
 
 ## Current scope
 
-Primary story narration currently comes from analyzed video transcript units.
-Audio-only sources can be used by other audio workflows but are not yet promoted
-to visual primary-story clips.
-
-Still images and visual-only video are supporting visual evidence rather than
-invented spoken story sources.
+The first production-beta release optimizes deterministic source/topic diversity.
+Future iterations can add explicit user-defined roles such as "founder interview",
+"customer proof", or "archive footage" once the UI supports grounded role assignment.
