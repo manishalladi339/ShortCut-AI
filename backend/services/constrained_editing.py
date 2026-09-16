@@ -133,9 +133,13 @@ def _caption_operations(
     operations: list[dict] = []
     intents: list[str] = []
 
-    remove = (
-        any(action in lowered for action in ("remove", "delete", "hide"))
-        or bool(re.search(r"\bno\s+(?:caption|captions|subtitle|subtitles)\b", lowered))
+    caption_subject = r"(?:caption|captions|subtitle|subtitles)"
+    remove = bool(
+        re.search(
+            rf"\b(?:remove|delete|hide)\s+(?:the\s+)?(?:all\s+)?{caption_subject}\b",
+            lowered,
+        )
+        or re.search(rf"\bno\s+{caption_subject}\b", lowered)
     )
     if remove:
         intents.append("remove_captions")
@@ -155,19 +159,39 @@ def _caption_operations(
 
     style_patch: dict[str, Any] = {}
     style_reasons: list[str] = []
-    if any(term in lowered for term in ("minimal", "simpler", "simple captions", "simple subtitles")):
+    if re.search(
+        rf"\b(?:minimal|simpler|simple)\s+(?:the\s+)?{caption_subject}\b|"
+        rf"\b{caption_subject}\s+(?:more\s+)?(?:minimal|simpler|simple)\b",
+        lowered,
+    ):
         style_patch["preset"] = "minimal"
         style_reasons.append("use a minimal caption preset")
-    if any(term in lowered for term in ("smaller", "reduce caption", "reduce subtitle", "shrink")):
+    if re.search(
+        rf"\b(?:make\s+)?(?:the\s+)?{caption_subject}\s+(?:a\s+)?(?:bit\s+)?smaller\b|"
+        rf"\b(?:smaller|shrink|reduce)\s+(?:the\s+)?{caption_subject}\b",
+        lowered,
+    ):
         style_patch["size_scale"] = 0.85
         style_reasons.append("reduce caption size")
-    if any(term in lowered for term in ("larger", "bigger", "increase caption", "increase subtitle")):
+    if re.search(
+        rf"\b(?:make\s+)?(?:the\s+)?{caption_subject}\s+(?:a\s+)?(?:bit\s+)?(?:larger|bigger)\b|"
+        rf"\b(?:larger|bigger|increase)\s+(?:the\s+)?{caption_subject}\b",
+        lowered,
+    ):
         style_patch["size_scale"] = 1.15
         style_reasons.append("increase caption size")
-    if any(term in lowered for term in ("move captions lower", "move subtitles lower", "captions lower", "subtitles lower", "lower on screen")):
+    if re.search(
+        rf"\b(?:move\s+)?(?:the\s+)?{caption_subject}\s+lower\b|"
+        rf"\b{caption_subject}\s+lower\s+on\s+screen\b",
+        lowered,
+    ):
         style_patch["vertical_position"] = "lower"
         style_reasons.append("move captions lower")
-    if any(term in lowered for term in ("move captions higher", "move subtitles higher", "captions higher", "subtitles higher", "higher on screen")):
+    if re.search(
+        rf"\b(?:move\s+)?(?:the\s+)?{caption_subject}\s+higher\b|"
+        rf"\b{caption_subject}\s+higher\s+on\s+screen\b",
+        lowered,
+    ):
         style_patch["vertical_position"] = "higher"
         style_reasons.append("move captions higher")
 
@@ -198,7 +222,12 @@ def _broll_operations(
 ) -> tuple[list[str], list[dict]]:
     lowered = instruction.lower()
     mentions_broll = any(term in lowered for term in ("b-roll", "broll", "b roll", "overlay"))
-    removes = any(term in lowered for term in ("remove", "delete", "hide", "clear"))
+    removes = bool(
+        re.search(
+            r"\b(?:remove|delete|hide|clear)\s+(?:the\s+)?(?:all\s+)?(?:b-roll|broll|b\s+roll|overlays?)\b",
+            lowered,
+        )
+    )
     if not (mentions_broll and removes):
         return [], []
 
@@ -242,14 +271,25 @@ def _music_operations(
     if not any(term in lowered for term in ("music", "music bed", "background audio")):
         return [], []
 
+    music_subject = r"(?:background\s+)?music(?:\s+bed)?"
     mode = None
-    if any(term in lowered for term in ("remove", "delete")) or re.search(r"\bno\s+music\b", lowered):
+    if re.search(rf"\b(?:remove|delete)\s+(?:the\s+)?{music_subject}\b", lowered) or re.search(
+        rf"\bno\s+{music_subject}\b", lowered
+    ):
         mode = "remove_music"
-    elif any(term in lowered for term in ("mute", "silence")):
+    elif re.search(rf"\b(?:mute|silence)\s+(?:the\s+)?{music_subject}\b", lowered):
         mode = "mute_music"
-    elif any(term in lowered for term in ("lower", "quieter", "reduce", "turn down", "decrease")):
+    elif (
+        re.search(rf"\b(?:lower|reduce|decrease)\s+(?:the\s+)?{music_subject}\b", lowered)
+        or re.search(rf"\bturn\s+down\s+(?:the\s+)?{music_subject}\b", lowered)
+        or re.search(rf"\bmake\s+(?:the\s+)?{music_subject}\s+quieter\b", lowered)
+    ):
         mode = "lower_music"
-    elif any(term in lowered for term in ("raise", "louder", "increase", "turn up")):
+    elif (
+        re.search(rf"\b(?:raise|increase)\s+(?:the\s+)?{music_subject}\b", lowered)
+        or re.search(rf"\bturn\s+up\s+(?:the\s+)?{music_subject}\b", lowered)
+        or re.search(rf"\bmake\s+(?:the\s+)?{music_subject}\s+louder\b", lowered)
+    ):
         mode = "raise_music"
     if mode is None:
         return [], []
