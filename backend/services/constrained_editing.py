@@ -45,11 +45,6 @@ def _timeline_end_ticks(sequence: dict) -> int:
     return max(ends)
 
 
-def _overlaps(start: int, duration: int, scope_start: int, scope_end: int) -> bool:
-    end = start + duration
-    return start < scope_end and end > scope_start
-
-
 def _contained(start: int, duration: int, scope_start: int, scope_end: int) -> bool:
     """True only when mutating the whole item cannot leak outside approved scope."""
     end = start + duration
@@ -162,26 +157,26 @@ def _caption_operations(
                         "sequence_id": sequence["id"],
                         "caption_id": cue["id"],
                     },
-                    reason="Caption overlaps the requested edit scope.",
+                    reason="Caption is fully contained in the requested edit scope.",
                 )
             )
         return intents, operations
 
     style_patch: dict[str, Any] = {}
     style_reasons: list[str] = []
-    if any(term in lowered for term in ("minimal caption", "minimal subtitle", "simpler caption")):
+    if any(term in lowered for term in ("minimal", "simpler", "simple captions", "simple subtitles")):
         style_patch["preset"] = "minimal"
         style_reasons.append("use a minimal caption preset")
-    if any(term in lowered for term in ("smaller caption", "smaller subtitle", "reduce caption")):
+    if any(term in lowered for term in ("smaller", "reduce caption", "reduce subtitle", "shrink")):
         style_patch["size_scale"] = 0.85
         style_reasons.append("reduce caption size")
-    if any(term in lowered for term in ("larger caption", "bigger caption", "larger subtitle", "bigger subtitle")):
+    if any(term in lowered for term in ("larger", "bigger", "increase caption", "increase subtitle")):
         style_patch["size_scale"] = 1.15
         style_reasons.append("increase caption size")
-    if any(term in lowered for term in ("lower caption", "captions lower", "subtitle lower")):
+    if any(term in lowered for term in ("move captions lower", "move subtitles lower", "captions lower", "subtitles lower", "lower on screen")):
         style_patch["vertical_position"] = "lower"
         style_reasons.append("move captions lower")
-    if any(term in lowered for term in ("higher caption", "captions higher", "subtitle higher")):
+    if any(term in lowered for term in ("move captions higher", "move subtitles higher", "captions higher", "subtitles higher", "higher on screen")):
         style_patch["vertical_position"] = "higher"
         style_reasons.append("move captions higher")
 
