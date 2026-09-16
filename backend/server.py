@@ -16,6 +16,7 @@ from routers.jobs import router as jobs_router
 from routers.intelligence import router as intelligence_router
 from routers.project_state import router as project_state_router
 from routers.planner_feedback import router as planner_feedback_router
+from routers.project_intelligence import router as project_intelligence_router
 from routers.render import router as render_router
 from routers.retrieval import router as retrieval_router
 from routers.projects import router as projects_router
@@ -24,7 +25,7 @@ from routers.users import router as users_router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("shortcut")
 
-app = FastAPI(title="ShortCut AI", version="0.6.0")
+app = FastAPI(title="ShortCut AI", version="0.7.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,6 +53,7 @@ api_v1.include_router(auth_router)
 api_v1.include_router(users_router)
 api_v1.include_router(projects_router)
 api_v1.include_router(project_state_router)
+api_v1.include_router(project_intelligence_router)
 api_v1.include_router(ai_planner_router)
 api_v1.include_router(planner_feedback_router)
 api_v1.include_router(render_router)
@@ -64,7 +66,7 @@ api_v1.include_router(local_storage_router)
 
 @api.get("/")
 async def root():
-    return {"name": "ShortCut AI", "version": "0.6.0", "docs": "/docs"}
+    return {"name": "ShortCut AI", "version": "0.7.0", "docs": "/docs"}
 
 
 @api.get("/health")
