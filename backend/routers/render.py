@@ -85,6 +85,8 @@ async def create_export(
         "storage_key": None,
         "duration_sec": None,
         "render_metadata": {},
+        "qa_status": None,
+        "qa_report": None,
         "created_at": now,
         "updated_at": now,
     }
