@@ -682,6 +682,11 @@ function SelectionInspector({
           <MetaChip label="Semantic replacement" />
         ) : null}
         {metadata.pacing_retimed ? <MetaChip label="Retimed" /> : null}
+        {isClip && (selection.clip.transform as any)?.keyframes?.length ? (
+          <MetaChip
+            label={`Motion · ${(selection.clip.transform as any).keyframes.length} keyframes`}
+          />
+        ) : null}
         {!isClip && metadata.preset ? (
           <MetaChip label={`Caption preset · ${titleCase(String(metadata.preset))}`} />
         ) : null}
@@ -707,6 +712,13 @@ function SelectionInspector({
               label="Tighten pacing"
               onPress={() =>
                 onAIEdit("Make this section faster", startSec, endSec)
+              }
+            />
+            <QuickAction
+              icon="expand-outline"
+              label="Slow push-in"
+              onPress={() =>
+                onAIEdit("Add a subtle push-in to this shot", startSec, endSec)
               }
             />
             {metadata.primary_speaker ? (
