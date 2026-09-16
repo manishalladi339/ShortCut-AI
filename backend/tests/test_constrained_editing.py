@@ -733,3 +733,107 @@ def test_motion_refuses_clip_that_crosses_requested_scope_boundary():
         assert "no matching timeline items" in str(exc)
     else:
         raise AssertionError("motion must not leak outside the approved scope")
+
+
+
+def test_slide_story_in_from_left_is_reviewable_and_preserves_geometry():
+    state = _state()
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=state,
+        instruction="Slide this shot in from the left",
+        scope_start_sec=0,
+        scope_end_sec=20,
+    )
+    assert proposal["interpreted_intents"] == ["slide_left_in"]
+    assert len(proposal["operations"]) == 1
+    operation = proposal["operations"][0]
+    assert operation["operation"] == "set_clip_transition"
+    assert operation["component"] == "story"
+    assert operation["payload"]["transition_in"]["kind"] == "slide_left"
+
+    before = state["sequences"][0]["tracks"][0]["clips"][0]
+    changed = apply_constrained_operations(
+        state=state,
+        operations=proposal["operations"],
+    )
+    after = changed["sequences"][0]["tracks"][0]["clips"][0]
+    assert after["timeline_start"] == before["timeline_start"]
+    assert after["duration"] == before["duration"]
+    assert after["source_start"] == before["source_start"]
+    assert after["source_duration"] == before["source_duration"]
+    assert after["transition_in"]["kind"] == "slide_left"
+
+
+def test_fade_story_out_sets_only_exit_transition():
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=_state(),
+        instruction="Fade this shot out",
+        scope_start_sec=0,
+        scope_end_sec=20,
+    )
+    operation = proposal["operations"][0]
+    assert "transition_in" not in operation["payload"]
+    assert operation["payload"]["transition_out"]["kind"] == "fade"
+
+
+def test_fade_broll_out_targets_only_ai_overlay():
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=_state(),
+        instruction="Fade the B-roll out",
+        scope_start_sec=0,
+        scope_end_sec=10,
+    )
+    assert proposal["interpreted_intents"] == ["fade_transition"]
+    assert len(proposal["operations"]) == 1
+    operation = proposal["operations"][0]
+    assert operation["component"] == "broll"
+    assert operation["payload"]["clip_id"] == "broll-1"
+    assert operation["payload"]["transition_out"]["kind"] == "fade"
+
+
+def test_caption_fade_is_not_misread_as_story_transition():
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=_state(),
+        instruction="Fade the captions in",
+    )
+    assert proposal["interpreted_intents"] == ["restyle_captions"]
+    assert all(
+        operation["operation"] == "update_caption"
+        for operation in proposal["operations"]
+    )
+    assert all(
+        operation["payload"]["style"]["animation"] == "fade"
+        for operation in proposal["operations"]
+    )
+
+
+def test_remove_visual_transition_preserves_other_clip_properties():
+    state = _state()
+    clip = state["sequences"][0]["tracks"][0]["clips"][0]
+    clip["transition_in"] = {"kind": "slide_right", "duration": 250}
+    clip["transition_out"] = {"kind": "fade", "duration": 250}
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=state,
+        instruction="Remove the transition from this shot",
+        scope_start_sec=0,
+        scope_end_sec=20,
+    )
+    changed = apply_constrained_operations(
+        state=state,
+        operations=proposal["operations"],
+    )
+    after = changed["sequences"][0]["tracks"][0]["clips"][0]
+    assert after["transition_in"] is None
+    assert after["transition_out"] is None
+    assert after["duration"] == 20000
+    assert after["source_duration"] == 20000
