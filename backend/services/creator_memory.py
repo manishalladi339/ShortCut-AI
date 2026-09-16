@@ -114,7 +114,7 @@ def _constrained_signals(proposals: list[dict]) -> dict:
                 elif op == "set_clip_properties":
                     reason = str(operation.get("reason") or "")
                     match = re.search(
-                        r"from volume\s+([0-9.]+)\s+to\s+([0-9.]+)",
+                        r"from volume\s+([0-9]+(?:\.[0-9]+)?)\s+to\s+([0-9]+(?:\.[0-9]+)?)",
                         reason,
                         re.IGNORECASE,
                     )
