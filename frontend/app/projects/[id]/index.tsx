@@ -140,19 +140,29 @@ export default function ProjectDetail() {
             testID="project-upload-asset-button"
           />
           {project.creation_mode === "create_for_me" ? (
-            <Button
-              label="Open AI Director"
-              variant="secondary"
-              onPress={() => router.push(`/projects/${project.id}/ai-director` as any)}
-              testID="project-run-pipeline-button"
-              iconLeft={<Ionicons name="sparkles" size={18} color={colors.textHigh} />}
-            />
+            <>
+              <Button
+                label="Open AI Director"
+                variant="secondary"
+                onPress={() => router.push(`/projects/${project.id}/ai-director` as any)}
+                testID="project-run-pipeline-button"
+                iconLeft={<Ionicons name="sparkles" size={18} color={colors.textHigh} />}
+              />
+              <Button
+                label="Refine with AI"
+                variant="secondary"
+                onPress={() => router.push(`/projects/${project.id}/ai-editor` as any)}
+                testID="project-refine-ai-button"
+                iconLeft={<Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.textHigh} />}
+              />
+            </>
           ) : (
             <Button
-              label="Open AI Editor (Phase 2.3)"
+              label="Open AI Editor"
               variant="secondary"
-              onPress={() => Alert.alert("Coming soon", "Create With Me ships in Phase 2.3.")}
+              onPress={() => router.push(`/projects/${project.id}/ai-editor` as any)}
               testID="project-open-editor-button"
+              iconLeft={<Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.textHigh} />}
             />
           )}
         </View>
