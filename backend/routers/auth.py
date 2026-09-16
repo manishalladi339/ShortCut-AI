@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -21,6 +22,7 @@ from core.security import (
 )
 from db.mongo import get_db
 from models.common import AuthProvider, SubscriptionTier
+from services.email_delivery import EmailDeliveryError, send_password_reset
 from services.quota import quota_period
 from models.user import (
     AuthResponse,
@@ -35,6 +37,7 @@ from models.user import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger("shortcut.auth")
 
 
 def _user_to_public(user_doc: dict) -> UserPublic:
@@ -293,6 +296,30 @@ async def forgot_password(body: ForgotPasswordBody) -> dict:
             reset_doc["_dev_token"] = token
         await db.password_resets.insert_one(reset_doc)
         await _audit(user["id"], "auth.password_reset_requested")
+
+        if settings.ENVIRONMENT not in {"development", "test"}:
+            try:
+                delivered = await send_password_reset(email, token)
+                if not delivered:
+                    raise EmailDeliveryError(
+                        "Password-reset email delivery is disabled"
+                    )
+                await _audit(user["id"], "auth.password_reset_delivered")
+            except EmailDeliveryError as exc:
+                # Preserve the anti-enumeration response while ensuring a token
+                # that was never delivered cannot linger as an active reset.
+                await db.password_resets.delete_one({"id": reset_doc["id"]})
+                await _audit(
+                    user["id"],
+                    "auth.password_reset_delivery_failed",
+                    {"provider": settings.PASSWORD_RESET_EMAIL_PROVIDER},
+                )
+                logger.error(
+                    "password_reset_delivery_failed user_id=%s provider=%s error=%s",
+                    user["id"],
+                    settings.PASSWORD_RESET_EMAIL_PROVIDER,
+                    type(exc).__name__,
+                )
     return {"ok": True}
 
 
