@@ -617,7 +617,20 @@ def _motion_operations(
                 )
             )
 
-    return ["remove_motion" if remove_motion else "add_motion"], operations
+    if remove_motion:
+        intent = "remove_motion"
+    else:
+        requested = [
+            ("push_in", zoom_in),
+            ("pull_out", zoom_out),
+            ("pan_left", pan_left),
+            ("pan_right", pan_right),
+            ("pan_up", pan_up),
+            ("pan_down", pan_down),
+        ]
+        active = [name for name, enabled in requested if enabled]
+        intent = active[0] if len(active) == 1 else "visual_motion"
+    return [intent], operations
 
 def _caption_operations(
     *,
