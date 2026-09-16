@@ -687,6 +687,16 @@ function SelectionInspector({
             label={`Motion · ${(selection.clip.transform as any).keyframes.length} keyframes`}
           />
         ) : null}
+        {isClip && selection.clip.transition_in ? (
+          <MetaChip
+            label={`In · ${titleCase(String((selection.clip.transition_in as any).kind))}`}
+          />
+        ) : null}
+        {isClip && selection.clip.transition_out ? (
+          <MetaChip
+            label={`Out · ${titleCase(String((selection.clip.transition_out as any).kind))}`}
+          />
+        ) : null}
         {!isClip && metadata.preset ? (
           <MetaChip label={`Caption preset · ${titleCase(String(metadata.preset))}`} />
         ) : null}
@@ -721,6 +731,20 @@ function SelectionInspector({
                 onAIEdit("Add a subtle push-in to this shot", startSec, endSec)
               }
             />
+            <QuickAction
+              icon="arrow-forward-outline"
+              label="Slide in"
+              onPress={() =>
+                onAIEdit("Slide this shot in from the left", startSec, endSec)
+              }
+            />
+            <QuickAction
+              icon="remove-outline"
+              label="Fade out"
+              onPress={() =>
+                onAIEdit("Fade this shot out", startSec, endSec)
+              }
+            />
             {metadata.primary_speaker ? (
               <QuickAction
                 icon="person-remove-outline"
@@ -744,6 +768,13 @@ function SelectionInspector({
               label="Replace B-roll"
               onPress={() =>
                 onAIEdit("Replace B-roll in this section", startSec, endSec)
+              }
+            />
+            <QuickAction
+              icon="remove-outline"
+              label="Fade B-roll out"
+              onPress={() =>
+                onAIEdit("Fade the B-roll out", startSec, endSec)
               }
             />
             <QuickAction
