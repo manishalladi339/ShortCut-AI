@@ -503,13 +503,15 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     f"{_atempo_chain(clip.playback_rate)},"
                     f"atrim=duration={target_duration:.6f},"
                 )
-                if clip.transition_in and _transition_kind(clip.transition_in) != "fade":
-                    raise RenderExecutionError("audio transitions support fade only")
-                if clip.transition_out and _transition_kind(clip.transition_out) != "fade":
-                    raise RenderExecutionError("audio transitions support fade only")
-                if fade_in > 0:
+                in_kind = _transition_kind(clip.transition_in)
+                out_kind = _transition_kind(clip.transition_out)
+                if clip.track_kind == "audio" and in_kind not in {None, "fade"}:
+                    raise RenderExecutionError("standalone audio transitions support fade only")
+                if clip.track_kind == "audio" and out_kind not in {None, "fade"}:
+                    raise RenderExecutionError("standalone audio transitions support fade only")
+                if fade_in > 0 and in_kind == "fade":
                     audio_filter += f"afade=t=in:st=0:d={fade_in:.6f},"
-                if fade_out > 0:
+                if fade_out > 0 and out_kind == "fade":
                     audio_filter += (
                         f"afade=t=out:st={max(0.0, target_duration - fade_out):.6f}:"
                         f"d={fade_out:.6f},"
