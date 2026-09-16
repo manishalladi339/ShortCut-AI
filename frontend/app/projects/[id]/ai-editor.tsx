@@ -29,6 +29,7 @@ const EXAMPLES = [
   "Replace B-roll in the intro with factory footage",
   "Make the captions smaller in the first 10 seconds",
   "Add a subtle push-in to this shot",
+  "Pan right",
   "Make the captions pop",
   "Use bold social captions",
   "Remove B-roll from the intro",
