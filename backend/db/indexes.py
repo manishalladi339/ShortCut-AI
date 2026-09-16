@@ -43,6 +43,7 @@ async def ensure_indexes() -> None:
     await db.assets.create_index([("processing_status", 1), ("updated_at", -1)])
 
     await db.jobs.create_index([("type", 1), ("status", 1), ("created_at", 1)])
+    await db.jobs.create_index([("type", 1), ("status", 1), ("lease_expires_at", 1)])
     await db.jobs.create_index([("user_id", 1), ("created_at", -1)])
     await db.jobs.create_index("asset_id")
 
