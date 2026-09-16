@@ -12,7 +12,8 @@ export interface ConstrainedEditOperation {
     | "remove_caption"
     | "remove_speaker_ripple"
     | "replace_broll"
-    | "retime_scope";
+    | "retime_scope"
+    | "repair_caption";
   component: ConstrainedComponent;
   payload: Record<string, any>;
   reason: string;
@@ -52,6 +53,11 @@ export const constrainedEditsApi = {
     }),
   list: (projectId: string) =>
     api<ConstrainedEditProposal[]>(`/projects/${projectId}/constrained-edits`),
+  createQaFixProposal: (projectId: string, exportId: string) =>
+    api<ConstrainedEditProposal>(
+      `/projects/${projectId}/exports/${exportId}/qa-fix-proposal`,
+      { method: "POST" },
+    ),
   apply: (
     projectId: string,
     proposalId: string,
