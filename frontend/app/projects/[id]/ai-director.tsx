@@ -48,6 +48,7 @@ export default function AIDirectorScreen() {
   const [includeCaptions, setIncludeCaptions] = useState(true);
   const [removeDeadAir, setRemoveDeadAir] = useState(true);
   const [rhythmBroll, setRhythmBroll] = useState(true);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const [selectedOperationIds, setSelectedOperationIds] = useState<Set<string>>(new Set());
 
   const [phase, setPhase] = useState<Phase>("idle");
@@ -240,7 +241,7 @@ export default function AIDirectorScreen() {
       setStatusText("Applying approved edit decisions…");
       const nextState = await aiPlansApi.apply(project.id, plan.id, {
         expected_version: plan.project_state_version,
-        replace_existing_video_clips: hasVideoClips(state),
+        replace_existing_video_clips: replaceExisting,
         operation_ids: ids,
       });
 
@@ -304,7 +305,10 @@ export default function AIDirectorScreen() {
 
   const isBusy = phase !== "idle";
   const canBuild = mediaAssets.length > 0 && pendingAssets.length === 0;
-  const canApply = plan?.status === "proposed";
+  const timelineHasClips = hasVideoClips(state);
+  const canApply =
+    plan?.status === "proposed" &&
+    (!timelineHasClips || replaceExisting);
   const canRender =
     Boolean(plan?.status === "applied") ||
     hasVideoClips(state);
@@ -527,13 +531,31 @@ export default function AIDirectorScreen() {
               );
             })}
 
-            {canApply ? (
+            {plan.status === "proposed" && timelineHasClips ? (
+              <View style={styles.replaceWarning}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.bodyMed, { color: colors.warning }]}>
+                    Existing primary video clips detected
+                  </Text>
+                  <Text style={[typography.caption, { color: colors.textMedium, marginTop: spacing.xs }]}>
+                    ShortCut will not replace them unless you explicitly allow it.
+                  </Text>
+                </View>
+                <Switch
+                  value={replaceExisting}
+                  onValueChange={setReplaceExisting}
+                  trackColor={{ false: colors.surface3, true: colors.warning }}
+                />
+              </View>
+            ) : null}
+
+            {plan.status === "proposed" ? (
               <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
                 <Button
                   label="Apply approved edit"
                   variant="primary"
                   loading={phase === "applying"}
-                  disabled={isBusy}
+                  disabled={isBusy || !canApply}
                   onPress={applyPlan}
                   iconLeft={<Ionicons name="checkmark-circle" color="#FFF" size={18} />}
                 />
@@ -867,5 +889,16 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
+  },
+  replaceWarning: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: "rgba(255,214,10,0.06)",
+    marginTop: spacing.md,
   },
 });
