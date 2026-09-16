@@ -19,9 +19,10 @@ Do not use local filesystem storage across independent production containers.
 1. External MongoDB with backups enabled.
 2. S3 bucket in the deployment region.
 3. OpenAI API key for the configured transcription/vision/embedding providers.
-4. HTTPS domain for the API.
-5. Exact frontend origins for CORS.
-6. A strong random JWT secret.
+4. Resend account/API key and a verified sender for password-reset mail.
+5. HTTPS domain for the API.
+6. Exact frontend origins for CORS.
+7. A strong random JWT secret.
 
 The S3 workload identity should permit the object operations ShortCut uses and bucket
 health checks. At minimum this normally means object Get/Put/Delete plus bucket
@@ -43,6 +44,23 @@ Replace every placeholder. Production startup refuses:
 - missing OpenAI key when an OpenAI provider is enabled.
 
 Never commit `.env.production`.
+
+### Password-reset delivery
+
+Production refuses to boot unless password-reset email delivery is configured.
+The current provider is Resend.
+
+Set:
+
+- `PASSWORD_RESET_EMAIL_PROVIDER=resend`
+- `RESEND_API_KEY`
+- `PASSWORD_RESET_FROM_EMAIL`
+- `PASSWORD_RESET_URL_TEMPLATE` containing the literal `{token}`
+
+The reset URL can point to a web route or the `shortcutai://` mobile deep link.
+Tokens are stored only as hashes in production. If email delivery fails, the
+undelivered reset record is invalidated and the public endpoint still returns the
+same generic response to avoid account enumeration.
 
 ## Validate the compose file
 
