@@ -1,6 +1,7 @@
 """Backend configuration loaded from .env."""
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -8,9 +9,27 @@ ROOT_DIR = Path(__file__).parent.parent
 load_dotenv(ROOT_DIR / ".env")
 
 
+def _csv_env(name: str, default: str = "") -> list[str]:
+    return [
+        item.strip()
+        for item in os.environ.get(name, default).split(",")
+        if item.strip()
+    ]
+
+
 class Settings:
+    ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "development").strip().lower()
+    LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
+    CORS_ORIGINS: list[str] = _csv_env(
+        "CORS_ORIGINS",
+        "http://localhost:8081,http://localhost:19006,http://localhost:3000",
+    )
+
     MONGO_URL: str = os.environ["MONGO_URL"]
     DB_NAME: str = os.environ["DB_NAME"]
+    MONGO_SERVER_SELECTION_TIMEOUT_MS: int = int(
+        os.environ.get("MONGO_SERVER_SELECTION_TIMEOUT_MS", "5000")
+    )
 
     JWT_SECRET: str = os.environ["JWT_SECRET"]
     JWT_ALG: str = os.environ.get("JWT_ALG", "HS256")
@@ -95,6 +114,18 @@ class Settings:
         "OPENAI_API_BASE", "https://api.openai.com/v1"
     )
 
+    # Transactional email for password-reset delivery.
+    PASSWORD_RESET_EMAIL_PROVIDER: str = os.environ.get(
+        "PASSWORD_RESET_EMAIL_PROVIDER", "disabled"
+    ).strip().lower()
+    PASSWORD_RESET_URL_TEMPLATE: str = os.environ.get(
+        "PASSWORD_RESET_URL_TEMPLATE", ""
+    )
+    RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
+    PASSWORD_RESET_FROM_EMAIL: str = os.environ.get(
+        "PASSWORD_RESET_FROM_EMAIL", ""
+    )
+
     EMERGENT_AUTH_SESSION_URL: str = os.environ.get(
         "EMERGENT_AUTH_SESSION_URL",
         "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
@@ -103,6 +134,72 @@ class Settings:
     STRIPE_PAID_PLANS_ENABLED: bool = (
         os.environ.get("STRIPE_PAID_PLANS_ENABLED", "false").lower() == "true"
     )
+
+    def validate_runtime(self) -> None:
+        if self.ENVIRONMENT not in {"development", "test", "staging", "production"}:
+            raise RuntimeError(
+                "ENVIRONMENT must be development, test, staging, or production"
+            )
+
+        if not self.CORS_ORIGINS:
+            raise RuntimeError("CORS_ORIGINS must contain at least one allowed origin")
+
+        if self.ENVIRONMENT == "production":
+            weak_secrets = {
+                "replace-with-a-long-random-secret",
+                "local-development-secret-change-me",
+                "changeme",
+                "secret",
+            }
+            if len(self.JWT_SECRET) < 32 or self.JWT_SECRET.lower() in weak_secrets:
+                raise RuntimeError(
+                    "Production JWT_SECRET must be a strong random value of at least 32 characters"
+                )
+            if "*" in self.CORS_ORIGINS:
+                raise RuntimeError("Production CORS_ORIGINS cannot contain '*'")
+
+            public = urlparse(self.APP_PUBLIC_URL)
+            if public.scheme != "https" or not public.netloc:
+                raise RuntimeError(
+                    "Production APP_PUBLIC_URL must be an absolute https URL"
+                )
+
+            if self.STORAGE_BACKEND.lower() != "s3":
+                raise RuntimeError(
+                    "Production STORAGE_BACKEND must be s3 so API/workers share durable media"
+                )
+            if not self.S3_BUCKET:
+                raise RuntimeError("Production S3_BUCKET is required")
+
+            uses_openai = any(
+                provider.lower() == "openai"
+                for provider in (
+                    self.TRANSCRIPTION_PROVIDER,
+                    self.VISION_PROVIDER,
+                    self.EMBEDDING_PROVIDER,
+                )
+            )
+            if uses_openai and not self.OPENAI_API_KEY:
+                raise RuntimeError(
+                    "OPENAI_API_KEY is required for configured production AI providers"
+                )
+
+            if self.PASSWORD_RESET_EMAIL_PROVIDER != "resend":
+                raise RuntimeError(
+                    "Production PASSWORD_RESET_EMAIL_PROVIDER must be 'resend'"
+                )
+            if not self.RESEND_API_KEY:
+                raise RuntimeError("Production RESEND_API_KEY is required")
+            if not self.PASSWORD_RESET_FROM_EMAIL:
+                raise RuntimeError(
+                    "Production PASSWORD_RESET_FROM_EMAIL is required"
+                )
+            if "{token}" not in self.PASSWORD_RESET_URL_TEMPLATE:
+                raise RuntimeError(
+                    "Production PASSWORD_RESET_URL_TEMPLATE must contain {token}"
+                )
+
+
 
 
 settings = Settings()

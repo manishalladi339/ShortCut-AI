@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -21,6 +22,8 @@ from core.security import (
 )
 from db.mongo import get_db
 from models.common import AuthProvider, SubscriptionTier
+from services.email_delivery import EmailDeliveryError, send_password_reset
+from services.quota import quota_period
 from models.user import (
     AuthResponse,
     ForgotPasswordBody,
@@ -34,6 +37,7 @@ from models.user import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger("shortcut.auth")
 
 
 def _user_to_public(user_doc: dict) -> UserPublic:
@@ -109,6 +113,7 @@ async def signup(body: SignupBody) -> AuthResponse:
         "subscription_status": "active",
         "monthly_project_count": 0,
         "monthly_project_limit": 3,
+        "quota_period": quota_period(),
         "onboarding_complete": False,
         "user_type": None,
         "niche": [],
@@ -215,6 +220,7 @@ async def google_login(body: GoogleAuthBody) -> AuthResponse:
             "subscription_status": "active",
             "monthly_project_count": 0,
             "monthly_project_limit": 3,
+            "quota_period": quota_period(),
             "onboarding_complete": False,
             "user_type": None,
             "niche": [],
@@ -278,18 +284,42 @@ async def forgot_password(body: ForgotPasswordBody) -> dict:
     user = await db.users.find_one({"email": email}, {"_id": 0, "id": 1})
     if user:
         token = secrets.token_urlsafe(32)
-        await db.password_resets.insert_one(
-            {
-                "id": str(uuid.uuid4()),
-                "user_id": user["id"],
-                "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-                "expires_at": utc_now() + timedelta(hours=1),
-                "used": False,
-                "created_at": utc_now(),
-                "_dev_token": token,  # surfaced for dev only; remove when email is wired
-            }
-        )
+        reset_doc = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+            "expires_at": utc_now() + timedelta(hours=1),
+            "used": False,
+            "created_at": utc_now(),
+        }
+        if settings.ENVIRONMENT in {"development", "test"}:
+            reset_doc["_dev_token"] = token
+        await db.password_resets.insert_one(reset_doc)
         await _audit(user["id"], "auth.password_reset_requested")
+
+        if settings.ENVIRONMENT not in {"development", "test"}:
+            try:
+                delivered = await send_password_reset(email, token)
+                if not delivered:
+                    raise EmailDeliveryError(
+                        "Password-reset email delivery is disabled"
+                    )
+                await _audit(user["id"], "auth.password_reset_delivered")
+            except EmailDeliveryError as exc:
+                # Preserve the anti-enumeration response while ensuring a token
+                # that was never delivered cannot linger as an active reset.
+                await db.password_resets.delete_one({"id": reset_doc["id"]})
+                await _audit(
+                    user["id"],
+                    "auth.password_reset_delivery_failed",
+                    {"provider": settings.PASSWORD_RESET_EMAIL_PROVIDER},
+                )
+                logger.error(
+                    "password_reset_delivery_failed user_id=%s provider=%s error=%s",
+                    user["id"],
+                    settings.PASSWORD_RESET_EMAIL_PROVIDER,
+                    type(exc).__name__,
+                )
     return {"ok": True}
 
 

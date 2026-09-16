@@ -8,6 +8,7 @@ from core.security import utc_now
 from db.mongo import get_db
 from models.common import ProjectStatus
 from models.project import ProjectCreate, ProjectListOut, ProjectOut, ProjectUpdate
+from services.quota import consume_project_slot, release_project_slot
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -94,24 +95,13 @@ async def continue_editing(user: dict = Depends(get_current_user)) -> list[Proje
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
 async def create_project(body: ProjectCreate, user: dict = Depends(get_current_user)) -> ProjectOut:
     db = get_db()
-    # quota check
-    limit = user.get("monthly_project_limit", 3)
-    count = user.get("monthly_project_count", 0)
-    if limit != -1 and count >= limit:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": {
-                    "code": "quota.exceeded",
-                    "message": f"Free tier limit of {limit} projects/month reached",
-                }
-            },
-        )
+    await consume_project_slot(user["id"])
     doc = _new_project_doc(user["id"], body)
-    await db.projects.insert_one(doc)
-    await db.users.update_one(
-        {"id": user["id"]}, {"$inc": {"monthly_project_count": 1}, "$set": {"updated_at": utc_now()}}
-    )
+    try:
+        await db.projects.insert_one(doc)
+    except Exception:
+        await release_project_slot(user["id"])
+        raise
     return _to_out(doc)
 
 
@@ -164,6 +154,7 @@ async def duplicate_project(project_id: str, user: dict = Depends(get_current_us
             status_code=404,
             detail={"error": {"code": "resource.not_found", "message": "Project not found"}},
         )
+    await consume_project_slot(user["id"])
     now = utc_now()
     copy = {
         **src,
@@ -177,7 +168,11 @@ async def duplicate_project(project_id: str, user: dict = Depends(get_current_us
         "created_at": now,
         "updated_at": now,
     }
-    await db.projects.insert_one(copy)
+    try:
+        await db.projects.insert_one(copy)
+    except Exception:
+        await release_project_slot(user["id"])
+        raise
     return _to_out(copy)
 
 
