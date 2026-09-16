@@ -6,7 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.deps import get_current_user
 from db.mongo import get_db
 from models.project_intelligence import ProjectIntelligenceOut
-from services.project_intelligence import build_and_store_project_intelligence
+from services.project_intelligence import (
+    build_and_store_project_intelligence,
+    latest_records_per_asset,
+)
 
 router = APIRouter(prefix="/projects", tags=["project-intelligence"])
 
@@ -39,6 +42,7 @@ async def rebuild_project_intelligence(
         },
         {"_id": 0},
     ).to_list(500)
+    records = latest_records_per_asset(records)
     if not records:
         raise HTTPException(
             status_code=409,
