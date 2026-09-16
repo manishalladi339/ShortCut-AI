@@ -18,6 +18,37 @@ from services.storage import get_storage
 router = APIRouter(prefix="/projects", tags=["render"])
 
 
+def export_updates_from_job(doc: dict, job: dict, *, now=None) -> dict:
+    """Pure reconciliation policy used by API reads and unit tests."""
+    fallback_now = now or utc_now()
+    if job.get("status") == "succeeded":
+        result = job.get("result") or {}
+        if (
+            result.get("export_id") == doc.get("id")
+            and result.get("storage_key")
+        ):
+            return {
+                "status": "completed",
+                "storage_key": result.get("storage_key"),
+                "duration_sec": result.get("duration_sec"),
+                "render_metadata": result.get("render_metadata") or {},
+                "qa_status": result.get("qa_status"),
+                "qa_report": result.get("qa_report"),
+                "updated_at": job.get("finished_at") or job.get("updated_at") or fallback_now,
+            }
+    if job.get("status") == "failed" and doc.get("status") != "completed":
+        return {
+            "status": "failed",
+            "updated_at": job.get("finished_at") or job.get("updated_at") or fallback_now,
+        }
+    if job.get("status") == "queued" and doc.get("status") == "rendering":
+        return {
+            "status": "queued",
+            "updated_at": job.get("updated_at") or fallback_now,
+        }
+    return {}
+
+
 async def _reconcile_export_from_job(doc: dict) -> dict:
     """Repair an export record from its durable job result/status when needed."""
     if doc.get("status") == "completed" and doc.get("storage_key"):
@@ -37,33 +68,7 @@ async def _reconcile_export_from_job(doc: dict) -> dict:
     if not job:
         return doc
 
-    updates = {}
-    if job.get("status") == "succeeded":
-        result = job.get("result") or {}
-        if (
-            result.get("export_id") == doc.get("id")
-            and result.get("storage_key")
-        ):
-            updates = {
-                "status": "completed",
-                "storage_key": result.get("storage_key"),
-                "duration_sec": result.get("duration_sec"),
-                "render_metadata": result.get("render_metadata") or {},
-                "qa_status": result.get("qa_status"),
-                "qa_report": result.get("qa_report"),
-                "updated_at": job.get("finished_at") or job.get("updated_at") or utc_now(),
-            }
-    elif job.get("status") == "failed" and doc.get("status") != "completed":
-        updates = {
-            "status": "failed",
-            "updated_at": job.get("finished_at") or job.get("updated_at") or utc_now(),
-        }
-    elif job.get("status") == "queued" and doc.get("status") == "rendering":
-        updates = {
-            "status": "queued",
-            "updated_at": job.get("updated_at") or utc_now(),
-        }
-
+    updates = export_updates_from_job(doc, job)
     if not updates:
         return doc
 
@@ -120,6 +125,25 @@ async def create_export(
         )
 
     db = get_db()
+
+    # Repeated taps must not enqueue duplicate expensive renders for the exact
+    # same canonical timeline version.
+    existing = await db.exports.find_one(
+        {
+            "user_id": user["id"],
+            "project_id": project_id,
+            "sequence_id": plan.sequence_id,
+            "project_state_version": plan.project_state_version,
+            "preset": body.preset,
+            "status": {"$in": ["queued", "rendering"]},
+        },
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+    if existing:
+        existing = await _reconcile_export_from_job(existing)
+        return _export_out(existing)
+
     now = utc_now()
     export_id = str(uuid.uuid4())
     job = await job_service.enqueue(
