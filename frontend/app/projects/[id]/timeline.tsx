@@ -682,6 +682,11 @@ function SelectionInspector({
           <MetaChip label="Semantic replacement" />
         ) : null}
         {metadata.pacing_retimed ? <MetaChip label="Retimed" /> : null}
+        {isClip && (selection.clip.transform?.keyframes?.length ?? 0) > 0 ? (
+          <MetaChip
+            label={`Motion · ${selection.clip.transform?.keyframes?.length ?? 0} keyframes`}
+          />
+        ) : null}
         {metadata.reframe ? (
           <MetaChip
             label={`Smart reframe · ${Math.round(
@@ -696,6 +701,13 @@ function SelectionInspector({
       <View style={styles.quickActions}>
         {isClip && selection.track.kind === "video" ? (
           <>
+            <QuickAction
+              icon="scan-outline"
+              label="Slow push-in"
+              onPress={() =>
+                onAIEdit("Slowly zoom in on this shot", startSec, endSec)
+              }
+            />
             <QuickAction
               icon="speedometer-outline"
               label="Tighten pacing"
@@ -721,6 +733,13 @@ function SelectionInspector({
 
         {isClip && selection.track.kind === "overlay" ? (
           <>
+            <QuickAction
+              icon="scan-outline"
+              label="Add subtle motion"
+              onPress={() =>
+                onAIEdit("Add subtle motion to the B-roll", startSec, endSec)
+              }
+            />
             <QuickAction
               icon="images-outline"
               label="Replace B-roll"
