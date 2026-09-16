@@ -7,10 +7,10 @@ retaining source provenance for every topic.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from collections import Counter, defaultdict
 from typing import Iterable
 
-from core.security import utc_now
 from services.semantic_search import cosine_similarity
 
 _STOPWORDS = {
@@ -268,7 +268,7 @@ def synthesize_project_intelligence(
     records: list[dict],
     assets: list[dict],
 ) -> dict:
-    now = utc_now()
+    now = datetime.now(timezone.utc)
     rows = _semantic_rows(records)
     topics = _cluster_topics(rows)
     speakers = _speaker_presences(records)
