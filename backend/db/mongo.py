@@ -10,7 +10,10 @@ _db = None
 def get_client() -> AsyncIOMotorClient:
     global _client
     if _client is None:
-        _client = AsyncIOMotorClient(settings.MONGO_URL)
+        _client = AsyncIOMotorClient(
+            settings.MONGO_URL,
+            serverSelectionTimeoutMS=settings.MONGO_SERVER_SELECTION_TIMEOUT_MS,
+        )
     return _client
 
 
@@ -22,7 +25,8 @@ def get_db():
 
 
 async def close():
-    global _client
+    global _client, _db
     if _client is not None:
         _client.close()
         _client = None
+    _db = None
