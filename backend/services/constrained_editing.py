@@ -12,6 +12,7 @@ from copy import deepcopy
 from typing import Any
 
 from models.project_state import ProjectStateDocument
+from services.scoped_pacing import apply_retime_scope, pacing_operations
 
 
 def _active_sequence(state: dict) -> dict:
@@ -51,6 +52,37 @@ def _contained(start: int, duration: int, scope_start: int, scope_end: int) -> b
     return start >= scope_start and end <= scope_end
 
 
+_NUMBER_WORDS = {
+    "one": 1.0,
+    "two": 2.0,
+    "three": 3.0,
+    "four": 4.0,
+    "five": 5.0,
+    "six": 6.0,
+    "seven": 7.0,
+    "eight": 8.0,
+    "nine": 9.0,
+    "ten": 10.0,
+    "eleven": 11.0,
+    "twelve": 12.0,
+    "thirteen": 13.0,
+    "fourteen": 14.0,
+    "fifteen": 15.0,
+    "sixteen": 16.0,
+    "seventeen": 17.0,
+    "eighteen": 18.0,
+    "nineteen": 19.0,
+    "twenty": 20.0,
+}
+
+
+def _duration_token_value(token: str) -> float:
+    lowered = token.strip().lower()
+    if lowered in _NUMBER_WORDS:
+        return _NUMBER_WORDS[lowered]
+    return float(lowered)
+
+
 def _derive_scope(
     *,
     instruction: str,
@@ -69,21 +101,27 @@ def _derive_scope(
         return start, end
 
     first_match = re.search(
-        r"(?:first|opening|intro(?:duction)?)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)",
+        r"(?:first|opening|intro(?:duction)?)\s+"
+        r"(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|"
+        r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
+        r"nineteen|twenty)\s*(?:s|sec|secs|seconds?)",
         lowered,
     )
     if first_match:
-        return 0.0, min(total_sec, float(first_match.group(1)))
+        return 0.0, min(total_sec, _duration_token_value(first_match.group(1)))
 
     if any(term in lowered for term in ("intro", "opening", "beginning")):
         return 0.0, min(total_sec, 10.0)
 
     last_match = re.search(
-        r"(?:last|final|ending)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)",
+        r"(?:last|final|ending)\s+"
+        r"(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|"
+        r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
+        r"nineteen|twenty)\s*(?:s|sec|secs|seconds?)",
         lowered,
     )
     if last_match:
-        length = float(last_match.group(1))
+        length = _duration_token_value(last_match.group(1))
         return max(0.0, total_sec - length), total_sec
 
     if any(term in lowered for term in ("ending", "outro", "at the end")):
@@ -641,6 +679,7 @@ def build_constrained_proposal(
     intents: list[str] = []
     operations: list[dict] = []
     for planner in (
+        pacing_operations,
         _speaker_removal_operations,
         _caption_operations,
         _broll_operations,
@@ -660,10 +699,29 @@ def build_constrained_proposal(
 
     if not intents:
         raise ValueError(
-            "Create With Me currently supports diarized speaker removal with "
-            "sequence-wide ripple, semantic B-roll replacement/removal, caption "
-            "restyling/removal, and music volume/removal."
+            "Create With Me currently supports scoped pacing changes, diarized "
+            "speaker removal with sequence-wide ripple, semantic B-roll "
+            "replacement/removal, caption restyling/removal, and music "
+            "volume/removal."
         )
+
+    structural = [
+        operation
+        for operation in operations
+        if operation.get("operation") in {"retime_scope", "remove_speaker_ripple"}
+    ]
+    if structural and len(operations) > len(structural):
+        raise ValueError(
+            "Structural story edits must be reviewed separately from caption, "
+            "B-roll, or music changes. Apply the story change first, then build "
+            "a second constrained edit proposal."
+        )
+    if len(structural) > 1:
+        raise ValueError(
+            "Only one structural story edit can be reviewed in a constrained "
+            "proposal at a time."
+        )
+
     if not operations:
         raise ValueError(
             "The instruction was understood, but there are no matching timeline "
@@ -734,6 +792,12 @@ def apply_constrained_operations(
 
         op = operation.get("operation")
         component = operation.get("component")
+
+        if op == "retime_scope":
+            if component != "story":
+                raise ValueError("Pacing operation has invalid component")
+            apply_retime_scope(sequence, payload)
+            continue
 
         if op == "remove_speaker_ripple":
             if component != "story":
