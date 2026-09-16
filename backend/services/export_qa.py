@@ -480,7 +480,7 @@ def analyze_export(path: Path, plan: RenderPlan) -> dict:
         issues.append(
             _issue(
                 "qa.signal_analysis_unavailable",
-                "info",
+                "warning",
                 "timeline",
                 "ShortCut could not complete file-level signal analysis, but the export passed core render validation.",
                 evidence={"error": str(exc)[:500]},
