@@ -55,12 +55,21 @@ export const assetsApi = {
   }) => api<PresignResp>("/assets/presign-upload", { method: "POST", body }),
   confirm: (id: string) =>
     api<Asset>(`/assets/${id}/confirm`, { method: "POST", body: {} }),
-  list: (opts: { kind?: AssetKind; project_id?: string; q?: string; tag?: string } = {}) => {
+  list: (
+    opts: {
+      kind?: AssetKind;
+      project_id?: string;
+      q?: string;
+      tag?: string;
+      limit?: number;
+    } = {},
+  ) => {
     const qs = new URLSearchParams();
     if (opts.kind) qs.set("kind", opts.kind);
     if (opts.project_id) qs.set("project_id", opts.project_id);
     if (opts.q) qs.set("q", opts.q);
     if (opts.tag) qs.set("tag", opts.tag);
+    if (opts.limit) qs.set("limit", String(Math.max(1, Math.min(100, opts.limit))));
     const s = qs.toString();
     return api<AssetListResp>(`/assets${s ? `?${s}` : ""}`);
   },

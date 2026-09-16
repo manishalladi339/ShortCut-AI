@@ -28,6 +28,10 @@ from services.highlight_scoring import (
     select_non_overlapping,
 )
 from services.narrative_planning import structure_narrative
+from services.multi_asset_director import (
+    build_director_brief,
+    select_multi_asset_candidates,
+)
 from services.planner_evaluation import evaluate_plan
 from services.plan_review import assign_operation_ids
 from services.project_intelligence import (
@@ -214,13 +218,25 @@ async def build_plan(
                 }
             )
 
-    chosen = select_non_overlapping(
-        candidates,
-        target_duration_sec=body.target_duration_sec,
-        max_clips=body.max_clips,
-        min_clip_sec=body.min_clip_sec,
-        max_clip_sec=body.max_clip_sec,
-    )
+    if body.director_mode == "multi_asset":
+        chosen = select_multi_asset_candidates(
+            candidates,
+            target_duration_sec=body.target_duration_sec,
+            max_clips=body.max_clips,
+            min_clip_sec=body.min_clip_sec,
+            max_clip_sec=body.max_clip_sec,
+            min_source_assets=body.min_source_assets,
+            max_source_share=body.max_source_share,
+            project_intelligence=project_intelligence,
+        )
+    else:
+        chosen = select_non_overlapping(
+            candidates,
+            target_duration_sec=body.target_duration_sec,
+            max_clips=body.max_clips,
+            min_clip_sec=body.min_clip_sec,
+            max_clip_sec=body.max_clip_sec,
+        )
     if not chosen:
         raise HTTPException(
             status_code=422,
@@ -267,6 +283,20 @@ async def build_plan(
     ordered = rebalance_speaker_runs(
         ordered,
         max_same_speaker_run=body.max_same_speaker_run,
+    )
+
+    director_brief = (
+        build_director_brief(
+            objective=objective,
+            target_duration_sec=body.target_duration_sec,
+            selected=ordered,
+            project_intelligence=project_intelligence,
+            assets=asset_docs,
+            min_source_assets=body.min_source_assets,
+            max_source_share=body.max_source_share,
+        )
+        if body.director_mode == "multi_asset"
+        else {}
     )
 
     sequence = next(
@@ -574,17 +604,25 @@ async def build_plan(
         ):
             best = broll[0]
             broll_asset = assets.get(best["asset_id"])
-            source_range = bounded_broll_source_range(
-                observation_time_sec=float(best["time"]),
-                asset_duration_sec=float(
-                    (broll_asset or {}).get("duration_sec") or 0.0
-                ),
-                target_duration_ticks=min(
-                    broll_available_duration,
-                    max(1, round(3.0 * ticks_per_second)),
-                ),
-                ticks_per_second=ticks_per_second,
+            target_broll_duration = min(
+                broll_available_duration,
+                max(1, round(3.0 * ticks_per_second)),
             )
+            if (broll_asset or {}).get("kind") == "image":
+                source_range = (
+                    (0, target_broll_duration)
+                    if target_broll_duration > 0
+                    else None
+                )
+            else:
+                source_range = bounded_broll_source_range(
+                    observation_time_sec=float(best["time"]),
+                    asset_duration_sec=float(
+                        (broll_asset or {}).get("duration_sec") or 0.0
+                    ),
+                    target_duration_ticks=target_broll_duration,
+                    ticks_per_second=ticks_per_second,
+                )
             if source_range:
                 broll_source_start, broll_duration = source_range
                 fade_ticks = 0
@@ -628,6 +666,12 @@ async def build_plan(
                                     "relevance_score"
                                 ],
                                 "replaces_primary_visual": True,
+                                "source_asset_kind": (
+                                    (broll_asset or {}).get("kind")
+                                ),
+                                "still_image_hold": (
+                                    (broll_asset or {}).get("kind") == "image"
+                                ),
                                 "rhythm_snapped": rhythm_event is not None,
                                 "rhythm_source_time": (
                                     rhythm_event.get("source_time")
@@ -830,6 +874,9 @@ async def build_plan(
         "narrative_provider": narrative.get("provider"),
         "narrative_model": narrative.get("model"),
         "evaluation": {},
+        "director_mode": body.director_mode,
+        "director_brief": director_brief,
+        "source_mix": director_brief.get("source_mix") or [],
         "created_at": now,
         "updated_at": now,
     }

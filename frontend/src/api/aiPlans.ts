@@ -65,6 +65,9 @@ export interface AIEditPlan {
   narrative_provider: string | null;
   narrative_model: string | null;
   evaluation: Record<string, any>;
+  director_mode: "standard" | "multi_asset";
+  director_brief: Record<string, any>;
+  source_mix: Array<Record<string, any>>;
   created_at: string;
   updated_at: string;
   applied_project_state_version: number | null;
@@ -76,8 +79,11 @@ export interface AIEditPlan {
 export interface CreateAIEditPlanPayload {
   objective?: string;
   target_audience?: string;
+  director_mode?: "standard" | "multi_asset";
   target_duration_sec?: number;
   max_clips?: number;
+  min_source_assets?: number;
+  max_source_share?: number;
   include_captions?: boolean;
   remove_dead_air?: boolean;
   rhythm_snap_broll?: boolean;

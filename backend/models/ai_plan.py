@@ -1,8 +1,8 @@
 """Schemas for auditable AI edit-plan proposals."""
 from __future__ import annotations
 from datetime import datetime
-from typing import Any
-from pydantic import BaseModel, Field
+from typing import Any, Literal
+from pydantic import BaseModel, Field, model_validator
 
 
 class HighlightCandidate(BaseModel):
@@ -79,6 +79,9 @@ class AIEditPlanOut(BaseModel):
     narrative_provider: str | None = None
     narrative_model: str | None = None
     evaluation: dict[str, Any] = Field(default_factory=dict)
+    director_mode: Literal["standard", "multi_asset"] = "standard"
+    director_brief: dict[str, Any] = Field(default_factory=dict)
+    source_mix: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     applied_project_state_version: int | None = None
@@ -100,8 +103,11 @@ class ApplyAIEditPlanRequest(BaseModel):
 class CreateAIEditPlanRequest(BaseModel):
     objective: str | None = Field(default=None, max_length=2000)
     target_audience: str | None = Field(default=None, max_length=500)
-    target_duration_sec: float = Field(default=45.0, ge=5.0, le=300.0)
-    max_clips: int = Field(default=8, ge=1, le=30)
+    director_mode: Literal["standard", "multi_asset"] = "standard"
+    target_duration_sec: float = Field(default=45.0, ge=5.0, le=900.0)
+    max_clips: int = Field(default=8, ge=1, le=80)
+    min_source_assets: int = Field(default=3, ge=1, le=12)
+    max_source_share: float = Field(default=0.55, ge=0.20, le=1.0)
     min_clip_sec: float = Field(default=2.0, ge=0.5, le=30.0)
     max_clip_sec: float = Field(default=20.0, ge=1.0, le=60.0)
     include_captions: bool = True
@@ -124,3 +130,18 @@ class CreateAIEditPlanRequest(BaseModel):
     music_duck_ratio: float = Field(default=8.0, ge=1.0, le=20.0)
     music_duck_attack_ms: float = Field(default=20.0, ge=0.01, le=2000.0)
     music_duck_release_ms: float = Field(default=350.0, ge=0.01, le=9000.0)
+
+    @model_validator(mode="after")
+    def director_mode_limits(self) -> "CreateAIEditPlanRequest":
+        if self.director_mode == "standard":
+            if self.target_duration_sec > 300:
+                raise ValueError(
+                    "standard Director plans are limited to 300 seconds; "
+                    "use director_mode='multi_asset' for long-form edits"
+                )
+            if self.max_clips > 30:
+                raise ValueError(
+                    "standard Director plans support at most 30 clips; "
+                    "use director_mode='multi_asset' for larger story cuts"
+                )
+        return self

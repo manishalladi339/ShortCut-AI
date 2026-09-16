@@ -24,6 +24,152 @@ _STOPWORDS = {
 }
 
 
+_FILENAME_ROLE_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
+    ("testimonial", ("testimonial", "customer story", "client story", "customer review")),
+    ("interview", ("interview", "podcast", "q&a", "q and a", "conversation")),
+    ("screen_recording", ("screen recording", "screenrecord", "screencast", "screen capture")),
+    ("product_demo", ("product demo", "product-demo", "demo walkthrough", "demonstration")),
+    ("broll", ("b-roll", "broll", "cutaway", "establishing shot", "beauty shot")),
+]
+
+
+def _normalized_filename(value: object) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"[_\-.]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _record_speakers(record: dict) -> list[str]:
+    explicit = [
+        str(value)
+        for value in (record.get("speakers") or [])
+        if str(value).strip()
+    ]
+    if explicit:
+        return sorted(set(explicit))
+    return sorted(
+        {
+            str(speaker)
+            for unit in (record.get("semantic_units") or [])
+            for speaker in (unit.get("speakers") or [])
+            if str(speaker).strip()
+        }
+    )
+
+
+def infer_asset_director_role(*, record: dict, asset: dict) -> dict:
+    """Infer a conservative editor role from explicit/structural source evidence.
+
+    Specific semantic labels such as interview/testimonial are used only when the
+    filename explicitly supports them. Otherwise the role stays structural.
+    """
+    kind = str(asset.get("kind") or "")
+    filename = _normalized_filename(asset.get("filename"))
+    semantic_units = record.get("semantic_units") or []
+    observations = record.get("visual_observations") or []
+    speakers = _record_speakers(record)
+
+    obs_count = len(observations)
+    text_obs = sum(
+        1
+        for item in observations
+        if str(item.get("text_on_screen") or "").strip()
+    )
+    people_obs = sum(
+        1
+        for item in observations
+        if int(item.get("people_count") or 0) > 0
+    )
+    text_ratio = text_obs / obs_count if obs_count else 0.0
+    people_ratio = people_obs / obs_count if obs_count else 0.0
+
+    evidence: list[str] = []
+    roles: list[str] = []
+    primary_role: str
+    confidence: float
+
+    if kind == "image":
+        primary_role = "photo"
+        confidence = 1.0
+        roles = ["photo", "visual_support"]
+        evidence.append("media kind is image")
+    else:
+        explicit_role = None
+        for role, phrases in _FILENAME_ROLE_PATTERNS:
+            matched = next((phrase for phrase in phrases if phrase in filename), None)
+            if matched:
+                explicit_role = role
+                evidence.append(f"filename contains '{matched}'")
+                break
+
+        if semantic_units:
+            roles.append("spoken_source")
+            evidence.append(f"{len(semantic_units)} grounded semantic units")
+        if obs_count:
+            roles.append("visual_support")
+            evidence.append(f"{obs_count} visual observations")
+        if len(speakers) >= 2:
+            roles.append("multi_speaker")
+            evidence.append(f"{len(speakers)} source-local speakers")
+
+        if explicit_role is not None:
+            primary_role = explicit_role
+            confidence = 0.95
+        elif (
+            obs_count >= 2
+            and text_ratio >= 0.55
+            and people_ratio <= 0.35
+        ):
+            primary_role = "screen_recording"
+            confidence = 0.82
+            evidence.append(
+                f"on-screen text in {text_obs}/{obs_count} observations with "
+                f"people in {people_obs}/{obs_count}"
+            )
+        elif semantic_units and len(speakers) >= 2:
+            primary_role = "conversation"
+            confidence = 0.82
+        elif semantic_units and people_ratio >= 0.5:
+            primary_role = "spoken_on_camera"
+            confidence = 0.78
+        elif semantic_units:
+            primary_role = "spoken_source"
+            confidence = 0.72
+        elif obs_count:
+            primary_role = "broll"
+            confidence = 0.74
+            evidence.append("visual observations without grounded spoken units")
+        else:
+            primary_role = "visual_source"
+            confidence = 0.55
+            evidence.append("no richer analyzed role evidence available")
+
+        if primary_role not in roles:
+            roles.insert(0, primary_role)
+        if primary_role in {
+            "broll",
+            "screen_recording",
+            "product_demo",
+        } and "visual_support" not in roles:
+            roles.append("visual_support")
+
+    # Preserve deterministic order without duplicates.
+    roles = list(dict.fromkeys(roles))
+    return {
+        "primary_role": primary_role,
+        "roles": roles,
+        "confidence": round(confidence, 3),
+        "evidence": evidence,
+        "metrics": {
+            "semantic_unit_count": len(semantic_units),
+            "visual_observation_count": obs_count,
+            "source_local_speaker_count": len(speakers),
+            "text_observation_ratio": round(text_ratio, 3),
+            "people_observation_ratio": round(people_ratio, 3),
+        },
+    }
+
+
 def _tokens(text: str) -> list[str]:
     return [
         token
@@ -278,6 +424,10 @@ def synthesize_project_intelligence(
     asset_summaries = []
     for record in sorted(records, key=lambda item: item["asset_id"]):
         asset = asset_by_id.get(record["asset_id"]) or {}
+        director_role = infer_asset_director_role(
+            record=record,
+            asset=asset,
+        )
         asset_summaries.append(
             {
                 "asset_id": record["asset_id"],
@@ -289,14 +439,25 @@ def synthesize_project_intelligence(
                     record.get("visual_observations") or []
                 ),
                 "speakers": list(record.get("speakers") or []),
+                "director_role": director_role["primary_role"],
+                "director_roles": director_role["roles"],
+                "director_role_confidence": director_role["confidence"],
+                "director_role_evidence": director_role["evidence"],
+                "director_role_metrics": director_role["metrics"],
             }
         )
+
+    role_counts = Counter(
+        str(item.get("director_role") or "unknown")
+        for item in asset_summaries
+    )
 
     summary = (
         f"Understood {len(records)} analyzed assets with {len(rows)} grounded "
         f"semantic units, {len(topics)} cross-asset topic clusters, "
         f"{len(speakers)} source-local speaker tracks, and "
-        f"{visual_library['observation_count']} visual observations."
+        f"{visual_library['observation_count']} visual observations across "
+        f"{len(role_counts)} grounded director-role types."
     )
 
     return {
@@ -309,6 +470,10 @@ def synthesize_project_intelligence(
         "visual_observation_count": visual_library["observation_count"],
         "source_intelligence_ids": sorted(record["id"] for record in records),
         "asset_summaries": asset_summaries,
+        "asset_role_counts": [
+            {"role": role, "count": count}
+            for role, count in sorted(role_counts.items())
+        ],
         "speaker_presences": speakers,
         "topic_clusters": topics,
         "visual_library": visual_library,
