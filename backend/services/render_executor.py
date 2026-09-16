@@ -52,6 +52,105 @@ def _atempo_chain(rate: float) -> str:
     return ",".join(f"atempo={value:.8f}" for value in stages)
 
 
+def _ease_expression(progress: str, easing: str) -> str:
+    q = f"clip({progress},0,1)"
+    if easing == "linear":
+        return q
+    if easing == "ease_in":
+        return f"({q})*({q})"
+    if easing == "ease_out":
+        return f"1-(1-({q}))*(1-({q}))"
+    if easing == "ease_in_out":
+        return f"({q})*({q})*(3-2*({q}))"
+    raise RenderExecutionError(f"unsupported keyframe easing: {easing}")
+
+
+def _keyframe_expression(
+    keyframes: list[dict],
+    *,
+    field: str,
+    progress_expression: str,
+    fallback: float,
+) -> str:
+    """Compile normalized transform keyframes into an FFmpeg expression."""
+    if not keyframes:
+        return f"{fallback:.8f}"
+
+    ordered = sorted(keyframes, key=lambda item: float(item.get("at", 0.0)))
+    if len(ordered) < 2:
+        raise RenderExecutionError("motion transform requires at least two keyframes")
+
+    pieces: list[tuple[float, str]] = []
+    for left, right in zip(ordered, ordered[1:]):
+        start = float(left["at"])
+        end = float(right["at"])
+        if end <= start:
+            raise RenderExecutionError("motion keyframes must be strictly increasing")
+        left_value = float(left.get(field, fallback))
+        right_value = float(right.get(field, left_value))
+        local = f"(({progress_expression})-{start:.8f})/{(end-start):.8f}"
+        eased = _ease_expression(local, str(left.get("easing") or "ease_in_out"))
+        interpolated = (
+            f"({left_value:.8f})+"
+            f"(({right_value:.8f})-({left_value:.8f}))*({eased})"
+        )
+        pieces.append((end, interpolated))
+
+    expression = f"{float(ordered[-1].get(field, fallback)):.8f}"
+    for end, interpolated in reversed(pieces):
+        expression = (
+            f"if(lte(({progress_expression}),{end:.8f}),"
+            f"({interpolated}),({expression}))"
+        )
+    return expression
+
+
+def _motion_expressions(
+    transform: dict,
+    *,
+    target_duration: float,
+    timeline_start: float,
+) -> tuple[str, str, str]:
+    keyframes = list(transform.get("keyframes") or [])
+    scale = float(transform.get("scale", 1.0))
+    position_x = float(transform.get("position_x", 0.0))
+    position_y = float(transform.get("position_y", 0.0))
+    if not keyframes:
+        return (
+            f"{scale:.8f}",
+            f"{position_x:.8f}",
+            f"{position_y:.8f}",
+        )
+
+    if target_duration <= 0:
+        raise RenderExecutionError("motion keyframes require a positive clip duration")
+
+    local_progress = f"clip(t/{target_duration:.8f},0,1)"
+    global_progress = (
+        f"clip((t-{timeline_start:.8f})/{target_duration:.8f},0,1)"
+    )
+    return (
+        _keyframe_expression(
+            keyframes,
+            field="scale",
+            progress_expression=local_progress,
+            fallback=scale,
+        ),
+        _keyframe_expression(
+            keyframes,
+            field="position_x",
+            progress_expression=global_progress,
+            fallback=position_x,
+        ),
+        _keyframe_expression(
+            keyframes,
+            field="position_y",
+            progress_expression=global_progress,
+            fallback=position_y,
+        ),
+    )
+
+
 def _transition_seconds(
     transition,
     *,
@@ -207,6 +306,11 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                 opacity = float(transform.get("opacity", 1.0))
                 if not 0 <= opacity <= 1:
                     raise RenderExecutionError("opacity must be between 0 and 1")
+                scale_expr, pos_x_expr, pos_y_expr = _motion_expressions(
+                    transform,
+                    target_duration=target_duration,
+                    timeline_start=timeline_start,
+                )
 
                 source_label = f"{input_index}:v"
                 prepared = f"vprep{idx}"
@@ -218,7 +322,7 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     f"setpts=(PTS-STARTPTS)/{clip.playback_rate},"
                     f"trim=duration={target_duration:.6f},"
                     f"scale={plan.width}:{plan.height}:force_original_aspect_ratio=decrease,"
-                    f"scale=iw*{scale:.8f}:ih*{scale:.8f},"
+                    f"scale=w='iw*({scale_expr})':h='ih*({scale_expr})':eval=frame,"
                     "format=rgba,"
                 )
                 if abs(rotation) > 0.000001:
@@ -256,9 +360,9 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                 out_label = f"vout{idx}"
                 filters.append(
                     f"[{current_video}][{prepared}]"
-                    f"overlay=x='(W-w)/2+{pos_x:.4f}':"
-                    f"y='(H-h)/2+{pos_y:.4f}':"
-                    "eof_action=pass:shortest=0"
+                    f"overlay=x='(W-w)/2+({pos_x_expr})':"
+                    f"y='(H-h)/2+({pos_y_expr})':"
+                    "eval=frame:eof_action=pass:shortest=0"
                     f"[{out_label}]"
                 )
                 current_video = out_label
