@@ -70,13 +70,12 @@ export default function AIDirectorScreen() {
       setState(s);
       setLatestExport(exports[0] ?? null);
 
-      if (!objective) {
-        setObjective(
-          p.prompt?.trim() ||
-            p.description?.trim() ||
-            `Create a strong ${p.content_type.replace(/_/g, " ")} edit`,
-        );
-      }
+      setObjective((current) =>
+        current ||
+        p.prompt?.trim() ||
+        p.description?.trim() ||
+        `Create a strong ${p.content_type.replace(/_/g, " ")} edit`,
+      );
 
       const proposed = plans.find((item) => item.status === "proposed");
       const newest = proposed ?? plans[0] ?? null;
@@ -89,7 +88,7 @@ export default function AIDirectorScreen() {
     } finally {
       setLoading(false);
     }
-  }, [id, objective]);
+  }, [id]);
 
   useFocusEffect(
     useCallback(() => {
