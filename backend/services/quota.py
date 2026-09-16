@@ -1,18 +1,12 @@
 """Atomic monthly project quota accounting."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import HTTPException
 from pymongo import ReturnDocument
 
 from core.security import utc_now
 from db.mongo import get_db
-
-
-def quota_period(now: datetime | None = None) -> str:
-    value = now or datetime.now(timezone.utc)
-    return value.astimezone(timezone.utc).strftime("%Y-%m")
+from services.quota_policy import quota_period
 
 
 async def consume_project_slot(user_id: str) -> dict:
