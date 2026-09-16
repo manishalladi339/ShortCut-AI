@@ -9,8 +9,11 @@ def candidate_key(item: dict) -> str:
 def _topic_lookup(project_intelligence: dict) -> dict[str, list[dict]]:
     lookup: dict[str, list[dict]] = {}
     for topic in project_intelligence.get("topic_clusters") or []:
-        for evidence in topic.get("evidence") or []:
-            key = f"{evidence['asset_id']}:{evidence['unit_index']}"
+        member_keys = topic.get("member_keys") or [
+            str(evidence["asset_id"]) + ":" + str(evidence["unit_index"])
+            for evidence in (topic.get("evidence") or [])
+        ]
+        for key in member_keys:
             lookup.setdefault(key, []).append(topic)
     return lookup
 
