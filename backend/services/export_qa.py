@@ -467,7 +467,125 @@ def _signal_issues(signal: dict) -> tuple[list[dict], list[dict]]:
     return issues, checks
 
 
-def analyze_export(path: Path, plan: RenderPlan) -> dict:
+def _mastering_issues(mastering: dict | None) -> tuple[list[dict], list[dict]]:
+    if not mastering:
+        return [], []
+
+    status = str(mastering.get("status") or "")
+    if status == "disabled":
+        return [], [
+            {
+                "id": "audio_mastering",
+                "status": "passed",
+                "summary": "Final audio mastering is disabled by configuration.",
+                "details": {"mastering_status": status},
+            }
+        ]
+
+    if status == "skipped_no_signal":
+        return [], [
+            {
+                "id": "audio_mastering",
+                "status": "passed",
+                "summary": "Mastering was skipped because no measurable audio signal was present.",
+                "details": {"mastering_status": status},
+            }
+        ]
+
+    if status != "applied":
+        return [
+            _issue(
+                "audio.mastering_unknown",
+                "warning",
+                "audio",
+                "Final audio mastering did not report a recognized completion state.",
+                evidence={"mastering_status": status},
+            )
+        ], [
+            {
+                "id": "audio_mastering",
+                "status": "warning",
+                "summary": "Final audio mastering status is unknown.",
+                "details": {"mastering_status": status},
+            }
+        ]
+
+    after = mastering.get("after") or {}
+    target_lufs = float(mastering.get("target_lufs") or -14.0)
+    target_peak = float(mastering.get("target_true_peak_dbtp") or -1.5)
+    output_lufs = after.get("integrated_lufs")
+    output_peak = after.get("true_peak_dbtp")
+
+    issues: list[dict] = []
+    if output_lufs is None or output_peak is None:
+        issues.append(
+            _issue(
+                "audio.mastering_measurement_missing",
+                "warning",
+                "audio",
+                "Final mastering completed without output loudness measurements.",
+                evidence={"mastering": mastering},
+            )
+        )
+    else:
+        loudness_error = abs(float(output_lufs) - target_lufs)
+        if loudness_error > 1.0:
+            issues.append(
+                _issue(
+                    "audio.mastering_loudness_miss",
+                    "warning",
+                    "audio",
+                    "Mastered output is outside the expected loudness tolerance.",
+                    evidence={
+                        "target_lufs": round(target_lufs, 2),
+                        "output_lufs": round(float(output_lufs), 2),
+                        "difference_lu": round(loudness_error, 2),
+                    },
+                    suggested_action="Review the final mix or mastering configuration.",
+                )
+            )
+
+        if float(output_peak) > target_peak + 0.2:
+            issues.append(
+                _issue(
+                    "audio.mastering_peak_miss",
+                    "warning",
+                    "audio",
+                    "Mastered output exceeds the configured true-peak tolerance.",
+                    evidence={
+                        "target_true_peak_dbtp": round(target_peak, 2),
+                        "output_true_peak_dbtp": round(float(output_peak), 2),
+                    },
+                    suggested_action="Lower the mastering true-peak target or inspect the final mix.",
+                )
+            )
+
+    return issues, [
+        {
+            "id": "audio_mastering",
+            "status": "warning" if issues else "passed",
+            "summary": (
+                f"Found {len(issues)} final mastering warning(s)."
+                if issues
+                else "Final loudness and true-peak mastering checks passed."
+            ),
+            "details": {
+                "mastering_status": status,
+                "target_lufs": target_lufs,
+                "target_true_peak_dbtp": target_peak,
+                "output_lufs": output_lufs,
+                "output_true_peak_dbtp": output_peak,
+            },
+        }
+    ]
+
+
+def analyze_export(
+    path: Path,
+    plan: RenderPlan,
+    *,
+    audio_mastering: dict | None = None,
+) -> dict:
     issues, checks = analyze_plan_quality(plan)
     try:
         signal = _run_signal_analysis(path)
@@ -500,6 +618,10 @@ def analyze_export(path: Path, plan: RenderPlan) -> dict:
                 evidence={"error": str(exc)[:500]},
             )
         )
+
+    mastering_issues, mastering_checks = _mastering_issues(audio_mastering)
+    issues.extend(mastering_issues)
+    checks.extend(mastering_checks)
 
     errors = sum(issue["severity"] == "error" for issue in issues)
     warnings = sum(issue["severity"] == "warning" for issue in issues)

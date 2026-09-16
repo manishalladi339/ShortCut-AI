@@ -135,6 +135,12 @@ async def process_one() -> bool:
             await _progress(job, 75)
 
             metadata = probe(output)
+            audio_mastering = result.get("audio_mastering") or {}
+            if audio_mastering:
+                metadata = {
+                    **metadata,
+                    "audio_mastering": audio_mastering,
+                }
             expected_duration = (
                 plan.duration_ticks
                 * plan.timebase_denominator
@@ -159,7 +165,11 @@ async def process_one() -> bool:
                 raise RuntimeError("render QC failed: output has no video stream")
 
             await _progress(job, 82)
-            qa_report = analyze_export(output, plan)
+            qa_report = analyze_export(
+                output,
+                plan,
+                audio_mastering=audio_mastering,
+            )
             await _progress(job, 90)
 
             if not await job_service.lease_active(
