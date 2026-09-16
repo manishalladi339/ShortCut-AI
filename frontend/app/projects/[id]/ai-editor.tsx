@@ -24,6 +24,7 @@ import { Button } from "@/src/components/ui/Button";
 import { colors, radius, spacing, typography } from "@/src/theme";
 
 const EXAMPLES = [
+  "Make the first 10 seconds faster",
   "Remove Speaker B",
   "Replace B-roll in the intro with factory footage",
   "Make the captions smaller in the first 10 seconds",
@@ -112,7 +113,7 @@ export default function AIEditorScreen() {
       Alert.alert(
         "ShortCut kept your timeline unchanged",
         e?.message ??
-          "This instruction is not supported safely yet. Try speaker removal, semantic B-roll replacement/removal, a caption change, or a music adjustment.",
+          "This instruction is not supported safely yet. Try scoped pacing, speaker removal, semantic B-roll replacement/removal, a caption change, or a music adjustment.",
       );
     } finally {
       setPlanning(false);
@@ -269,9 +270,9 @@ export default function AIEditorScreen() {
               Story edits use ripple safety
             </Text>
             <Text style={[typography.caption, { color: colors.textMedium, marginTop: spacing.xs }]}>
-              Speaker removal ripples synchronized tracks atomically. Semantic B-roll replacement
-              keeps the exact overlay slot. If a locked or user-authored item would be destructively
-              changed, ShortCut refuses the edit instead.
+              Pacing and speaker edits retime synchronized tracks atomically. Semantic B-roll
+              replacement keeps the exact overlay slot. If a locked or user-authored item would be
+              destructively changed, ShortCut refuses the edit instead.
             </Text>
           </View>
         </View>
