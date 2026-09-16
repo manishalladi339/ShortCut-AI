@@ -52,6 +52,37 @@ def _contained(start: int, duration: int, scope_start: int, scope_end: int) -> b
     return start >= scope_start and end <= scope_end
 
 
+_NUMBER_WORDS = {
+    "one": 1.0,
+    "two": 2.0,
+    "three": 3.0,
+    "four": 4.0,
+    "five": 5.0,
+    "six": 6.0,
+    "seven": 7.0,
+    "eight": 8.0,
+    "nine": 9.0,
+    "ten": 10.0,
+    "eleven": 11.0,
+    "twelve": 12.0,
+    "thirteen": 13.0,
+    "fourteen": 14.0,
+    "fifteen": 15.0,
+    "sixteen": 16.0,
+    "seventeen": 17.0,
+    "eighteen": 18.0,
+    "nineteen": 19.0,
+    "twenty": 20.0,
+}
+
+
+def _duration_token_value(token: str) -> float:
+    lowered = token.strip().lower()
+    if lowered in _NUMBER_WORDS:
+        return _NUMBER_WORDS[lowered]
+    return float(lowered)
+
+
 def _derive_scope(
     *,
     instruction: str,
@@ -70,21 +101,27 @@ def _derive_scope(
         return start, end
 
     first_match = re.search(
-        r"(?:first|opening|intro(?:duction)?)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)",
+        r"(?:first|opening|intro(?:duction)?)\s+"
+        r"(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|"
+        r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
+        r"nineteen|twenty)\s*(?:s|sec|secs|seconds?)",
         lowered,
     )
     if first_match:
-        return 0.0, min(total_sec, float(first_match.group(1)))
+        return 0.0, min(total_sec, _duration_token_value(first_match.group(1)))
 
     if any(term in lowered for term in ("intro", "opening", "beginning")):
         return 0.0, min(total_sec, 10.0)
 
     last_match = re.search(
-        r"(?:last|final|ending)\s+(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)",
+        r"(?:last|final|ending)\s+"
+        r"(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|"
+        r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
+        r"nineteen|twenty)\s*(?:s|sec|secs|seconds?)",
         lowered,
     )
     if last_match:
-        length = float(last_match.group(1))
+        length = _duration_token_value(last_match.group(1))
         return max(0.0, total_sec - length), total_sec
 
     if any(term in lowered for term in ("ending", "outro", "at the end")):
