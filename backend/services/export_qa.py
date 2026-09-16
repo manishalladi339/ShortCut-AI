@@ -81,6 +81,17 @@ def analyze_plan_quality(plan: RenderPlan) -> tuple[list[dict], list[dict]]:
         for clip in plan.clips
         if clip.track_kind == "video"
     ]
+    primary_visual_duration = (
+        max(
+            (
+                _sec(plan, clip.timeline_start + clip.duration)
+                for clip in primary
+            ),
+            default=total_duration,
+        )
+        if primary
+        else total_duration
+    )
     primary_intervals = _merge_intervals(
         [
             (
@@ -243,18 +254,21 @@ def analyze_plan_quality(plan: RenderPlan) -> tuple[list[dict], list[dict]]:
                 )
             )
 
-        if end > total_duration + 0.05:
+        if end > primary_visual_duration + 0.05:
             caption_issue_count += 1
             issues.append(
                 _issue(
                     "captions.out_of_bounds",
                     "error",
                     "captions",
-                    "Caption extends beyond the export duration.",
+                    "Caption extends beyond the primary visual timeline.",
                     start_sec=start,
                     end_sec=end,
-                    evidence={"caption_id": cue.id, "export_duration_sec": total_duration},
-                    suggested_action="Trim the caption to the sequence duration.",
+                    evidence={
+                        "caption_id": cue.id,
+                        "visual_duration_sec": round(primary_visual_duration, 3),
+                    },
+                    suggested_action="Trim the caption to the primary visual timeline.",
                     auto_fixable=True,
                 )
             )
@@ -416,7 +430,7 @@ def _signal_issues(signal: dict) -> tuple[list[dict], list[dict]]:
                 "Average output level is very quiet.",
                 evidence={"mean_volume_db": round(mean_volume, 2)},
                 suggested_action="Review dialogue gain and final mix loudness.",
-                auto_fixable=True,
+                auto_fixable=False,
             )
         )
     if max_volume is not None and max_volume >= -0.1:
@@ -428,7 +442,7 @@ def _signal_issues(signal: dict) -> tuple[list[dict], list[dict]]:
                 "Output peaks are extremely close to digital full scale.",
                 evidence={"max_volume_db": round(max_volume, 2)},
                 suggested_action="Lower the final mix slightly to preserve headroom.",
-                auto_fixable=True,
+                auto_fixable=False,
             )
         )
     audio_warning_count = len(
