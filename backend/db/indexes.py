@@ -48,6 +48,17 @@ async def ensure_indexes() -> None:
     await db.jobs.create_index("asset_id")
 
     await db.exports.create_index([("user_id", 1), ("project_id", 1), ("created_at", -1)])
+    await db.exports.create_index(
+        [
+            ("user_id", 1),
+            ("project_id", 1),
+            ("sequence_id", 1),
+            ("project_state_version", 1),
+            ("preset", 1),
+            ("status", 1),
+            ("created_at", -1),
+        ]
+    )
     await db.exports.create_index("job_id", unique=True)
 
     await db.media_intelligence.create_index(
