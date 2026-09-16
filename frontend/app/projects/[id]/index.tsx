@@ -141,10 +141,11 @@ export default function ProjectDetail() {
           />
           {project.creation_mode === "create_for_me" ? (
             <Button
-              label="Run AI Pipeline (Phase 2.2)"
+              label="Open AI Director"
               variant="secondary"
-              onPress={() => Alert.alert("Coming soon", "The Create For Me pipeline ships in Phase 2.2.")}
+              onPress={() => router.push(`/projects/${project.id}/ai-director` as any)}
               testID="project-run-pipeline-button"
+              iconLeft={<Ionicons name="sparkles" size={18} color={colors.textHigh} />}
             />
           ) : (
             <Button
@@ -182,7 +183,7 @@ export default function ProjectDetail() {
                     {a.filename}
                   </Text>
                   <Text style={[typography.caption, { color: colors.textMedium, marginTop: 2 }]}>
-                    {a.upload_status === "uploaded" ? "Uploaded" : "Pending"} · {(a.size_bytes / 1024).toFixed(1)} KB
+                    {a.processing_status === "ready" ? "Ready for AI" : label(a.processing_status)} · {(a.size_bytes / 1024).toFixed(1)} KB
                   </Text>
                 </View>
               </View>
