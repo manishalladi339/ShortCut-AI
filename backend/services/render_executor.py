@@ -23,6 +23,7 @@ from tempfile import TemporaryDirectory
 
 from core.config import settings
 from models.render_plan import RenderPlan
+from services.caption_rendering import build_ass_document
 from services.storage import materialize
 
 
@@ -113,32 +114,6 @@ def _run(command: list[str]) -> None:
 
     if completed.returncode != 0:
         raise RenderExecutionError((completed.stderr or "ffmpeg failed").strip()[-6000:])
-
-
-def _srt_time(seconds: float) -> str:
-    millis = max(0, round(seconds * 1000))
-    hours, remainder = divmod(millis, 3_600_000)
-    minutes, remainder = divmod(remainder, 60_000)
-    secs, ms = divmod(remainder, 1000)
-    return f"{hours:02}:{minutes:02}:{secs:02},{ms:03}"
-
-
-def _write_srt(plan: RenderPlan, destination: Path) -> None:
-    blocks: list[str] = []
-    for index, cue in enumerate(plan.captions, start=1):
-        start_sec = _ticks_to_seconds(
-            cue.start, plan.timebase_numerator, plan.timebase_denominator
-        )
-        end_sec = _ticks_to_seconds(
-            cue.start + cue.duration,
-            plan.timebase_numerator,
-            plan.timebase_denominator,
-        )
-        text = cue.text.replace("\r", " ").strip()
-        blocks.append(
-            f"{index}\n{_srt_time(start_sec)} --> {_srt_time(end_sec)}\n{text}\n"
-        )
-    destination.write_text("\n".join(blocks), encoding="utf-8")
 
 
 def _escape_filter_path(path: Path) -> str:
@@ -434,8 +409,8 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
             _run(command)
 
         if plan.captions:
-            srt_path = root / "captions.srt"
-            _write_srt(plan, srt_path)
+            ass_path = root / "captions.ass"
+            ass_path.write_text(build_ass_document(plan), encoding="utf-8")
             _run(
                 [
                     settings.FFMPEG_PATH,
@@ -443,7 +418,7 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     "-i",
                     str(composed),
                     "-vf",
-                    f"subtitles='{_escape_filter_path(srt_path)}'",
+                    f"subtitles='{_escape_filter_path(ass_path)}'",
                     "-c:v",
                     "libx264",
                     "-preset",
