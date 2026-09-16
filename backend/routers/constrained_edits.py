@@ -21,6 +21,7 @@ from services.constrained_editing import (
     build_constrained_proposal,
 )
 from services.creator_memory import refresh_creator_memory
+from services.semantic_broll_editing import build_semantic_broll_replacements
 
 router = APIRouter(prefix="/projects", tags=["constrained-edits"])
 
@@ -43,6 +44,16 @@ async def create_constrained_edit(
 ) -> ConstrainedEditProposalOut:
     state = await _get_or_create_state(project_id, user["id"])
     try:
+        additional_intents, additional_operations = await build_semantic_broll_replacements(
+            project_id=project_id,
+            user_id=user["id"],
+            state=state,
+            instruction=body.instruction,
+            scope_start_sec=body.scope_start_sec,
+            scope_end_sec=body.scope_end_sec,
+            additional_intents=additional_intents,
+            additional_operations=additional_operations,
+        )
         proposal = build_constrained_proposal(
             project_id=project_id,
             user_id=user["id"],
@@ -139,6 +150,64 @@ async def apply_constrained_edit(
     ]
     if not selected:
         raise _error("constrained_edit.empty_selection", "Select at least one change")
+
+    replacement_operations = [
+        operation
+        for operation in selected
+        if operation.get("operation") == "replace_broll"
+    ]
+    if replacement_operations:
+        replacement_asset_ids = sorted(
+            {
+                str((operation.get("payload") or {}).get("asset_id") or "")
+                for operation in replacement_operations
+            }
+            - {""}
+        )
+        assets = await db.assets.find(
+            {
+                "id": {"$in": replacement_asset_ids},
+                "user_id": user["id"],
+                "processing_status": "ready",
+                "kind": "video",
+            },
+            {"_id": 0, "id": 1, "duration_sec": 1},
+        ).to_list(len(replacement_asset_ids))
+        assets_by_id = {asset["id"]: asset for asset in assets}
+        if set(replacement_asset_ids) != set(assets_by_id):
+            raise _error(
+                "constrained_edit.replacement_asset_unavailable",
+                "A proposed replacement B-roll asset is no longer ready or available",
+                409,
+            )
+
+        sequence_by_id = {
+            sequence["id"]: sequence for sequence in state.get("sequences") or []
+        }
+        for operation in replacement_operations:
+            payload = operation.get("payload") or {}
+            sequence = sequence_by_id.get(str(payload.get("sequence_id") or ""))
+            asset = assets_by_id.get(str(payload.get("asset_id") or ""))
+            if not sequence or not asset:
+                raise _error(
+                    "constrained_edit.replacement_source_changed",
+                    "A proposed B-roll replacement source is no longer valid",
+                    409,
+                )
+            timebase = sequence.get("timebase") or {}
+            tps = float(timebase.get("numerator") or 1000) / float(
+                timebase.get("denominator") or 1
+            )
+            source_end = int(payload.get("source_start") or 0) + int(
+                payload.get("source_duration") or 0
+            )
+            duration_ticks = round(float(asset.get("duration_sec") or 0.0) * tps)
+            if source_end > duration_ticks + 1:
+                raise _error(
+                    "constrained_edit.replacement_source_out_of_bounds",
+                    "A proposed B-roll replacement source range is no longer available",
+                    409,
+                )
 
     try:
         candidate = apply_constrained_operations(state=state, operations=selected)
