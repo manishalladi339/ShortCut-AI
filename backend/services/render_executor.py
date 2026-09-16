@@ -9,6 +9,7 @@ This executor supports:
 - playback-rate and volume changes
 - timeline gaps
 - caption burn-in
+- two-pass final loudness/true-peak mastering
 
 Unsupported effect metadata still fails explicitly at higher layers rather than
 being silently ignored.
@@ -23,6 +24,7 @@ from tempfile import TemporaryDirectory
 
 from core.config import settings
 from models.render_plan import RenderPlan
+from services.audio_mastering import AudioMasteringError, master_audio
 from services.caption_rendering import build_ass_document
 from services.storage import materialize
 
@@ -408,8 +410,10 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
             )
             _run(command)
 
+        pre_master = composed
         if plan.captions:
             ass_path = root / "captions.ass"
+            captioned = root / "captioned.mp4"
             ass_path.write_text(build_ass_document(plan), encoding="utf-8")
             _run(
                 [
@@ -431,11 +435,26 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     "copy",
                     "-movflags",
                     "+faststart",
-                    str(output_path),
+                    str(captioned),
                 ]
             )
+            pre_master = captioned
+
+        if settings.AUDIO_MASTERING_ENABLED:
+            try:
+                audio_mastering = master_audio(pre_master, output_path)
+            except AudioMasteringError as exc:
+                raise RenderExecutionError(str(exc)) from exc
         else:
-            output_path.write_bytes(composed.read_bytes())
+            output_path.write_bytes(pre_master.read_bytes())
+            audio_mastering = {
+                "status": "disabled",
+                "target_lufs": float(settings.AUDIO_TARGET_LUFS),
+                "target_true_peak_dbtp": float(settings.AUDIO_TRUE_PEAK_DBTP),
+                "target_lra": float(settings.AUDIO_TARGET_LRA),
+                "before": None,
+                "after": None,
+            }
 
     if not output_path.is_file() or output_path.stat().st_size == 0:
         raise RenderExecutionError("renderer did not produce a valid output file")
@@ -447,4 +466,5 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
         "audio_source_count": len(audio_clips),
         "ducked_audio_source_count": len(ducked_audio),
         "caption_count": len(plan.captions),
+        "audio_mastering": audio_mastering,
     }
