@@ -21,7 +21,15 @@ class VisionProvider(Protocol):
 
 def _data_url(path: Path) -> str:
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}"
+    suffix = path.suffix.lower()
+    mime = {
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+    }.get(suffix, "image/jpeg")
+    return f"data:{mime};base64,{encoded}"
 
 
 def _normalized_box(value: object) -> dict | None:
@@ -102,7 +110,7 @@ class OpenAIVisionProvider:
             {
                 "type": "text",
                 "text": (
-                    "Analyze these representative video frames in order. Return JSON only "
+                    "Analyze these representative visual frames/images in order. Return JSON only "
                     "with a top-level 'frames' array. Each item must include: index, "
                     "description, shot_type, people_count, visible_objects (array), "
                     "text_on_screen (string or null), editing_notes (array), and subjects "
