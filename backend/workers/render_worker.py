@@ -44,6 +44,7 @@ async def _recover_stale_exports() -> None:
             {
                 "$set": {
                     "status": export_status,
+                    "active": export_status in {"queued", "rendering"},
                     "updated_at": utc_now(),
                 }
             },
@@ -108,7 +109,13 @@ async def process_one() -> bool:
                 "id": export_id,
                 "status": {"$ne": "completed"},
             },
-            {"$set": {"status": "rendering", "updated_at": utc_now()}},
+            {
+                "$set": {
+                    "status": "rendering",
+                    "active": True,
+                    "updated_at": utc_now(),
+                }
+            },
         )
         await _progress(job, 10)
 
@@ -163,6 +170,9 @@ async def process_one() -> bool:
                 output,
                 content_type="video/mp4",
             )
+            # Fence completion after the potentially slow upload. If the lease
+            # expired, this attempt must not commit export/job state.
+            await _progress(job, 95)
 
         duration_sec = float(metadata.get("duration_sec") or result["duration_sec"])
         now = utc_now()
@@ -198,6 +208,7 @@ async def process_one() -> bool:
             {
                 "$set": {
                     "status": "completed",
+                    "active": False,
                     "storage_key": storage_key,
                     "duration_sec": duration_sec,
                     "render_metadata": metadata,
@@ -226,6 +237,7 @@ async def process_one() -> bool:
                 {
                     "$set": {
                         "status": "failed" if final else "queued",
+                        "active": not final,
                         "updated_at": utc_now(),
                     }
                 },
