@@ -100,7 +100,7 @@ export default function AIDirectorScreen() {
     () =>
       assets.filter(
         (asset) =>
-          (asset.kind === "video" || asset.kind === "audio") &&
+          asset.kind === "video" &&
           asset.processing_status === "ready",
       ),
     [assets],
@@ -108,10 +108,9 @@ export default function AIDirectorScreen() {
 
   const pendingAssets = useMemo(
     () =>
-      assets.filter(
-        (asset) =>
-          asset.kind === "video" || asset.kind === "audio",
-      ).filter((asset) => asset.processing_status !== "ready"),
+      assets
+        .filter((asset) => asset.kind === "video")
+        .filter((asset) => asset.processing_status !== "ready"),
     [assets],
   );
 
@@ -140,7 +139,7 @@ export default function AIDirectorScreen() {
 
   async function ensureIntelligence() {
     if (mediaAssets.length === 0) {
-      throw new Error("Upload at least one processed video or audio asset first.");
+      throw new Error("Upload at least one processed video asset first.");
     }
 
     setPhase("analyzing");
@@ -387,7 +386,7 @@ export default function AIDirectorScreen() {
         <View style={styles.card}>
           <MetricRow
             icon="videocam-outline"
-            label="Ready video/audio"
+            label="Ready video"
             value={String(mediaAssets.length)}
             ok={mediaAssets.length > 0}
           />
