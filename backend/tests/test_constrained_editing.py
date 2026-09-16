@@ -577,3 +577,61 @@ def test_repair_caption_refuses_text_rewrite():
         assert "preserve the original caption text" in str(exc)
     else:
         raise AssertionError("QA repair must not rewrite caption text")
+
+
+
+def test_caption_pop_animation_is_reviewable_and_scoped():
+    state = _state()
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=state,
+        instruction="Make the captions pop in the first 5 seconds",
+    )
+    assert proposal["interpreted_intents"] == ["restyle_captions"]
+    assert len(proposal["operations"]) == 1
+    operation = proposal["operations"][0]
+    assert operation["payload"]["caption_id"] == "cap-1"
+    assert operation["payload"]["style"]["animation"] == "pop"
+
+    changed = apply_constrained_operations(
+        state=state,
+        operations=proposal["operations"],
+    )
+    captions = changed["sequences"][0]["captions"]
+    assert captions[0]["style"]["animation"] == "pop"
+    assert "animation" not in captions[1]["style"]
+
+
+def test_social_caption_instruction_sets_social_preset():
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=_state(),
+        instruction="Use bold social captions",
+    )
+    assert proposal["operations"]
+    assert all(
+        operation["payload"]["style"]["preset"] == "social"
+        for operation in proposal["operations"]
+    )
+
+
+def test_static_caption_instruction_disables_existing_animation():
+    state = _state()
+    for cue in state["sequences"][0]["captions"]:
+        cue["style"]["animation"] = "pop"
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=state,
+        instruction="Make the captions static",
+    )
+    changed = apply_constrained_operations(
+        state=state,
+        operations=proposal["operations"],
+    )
+    assert all(
+        cue["style"]["animation"] == "none"
+        for cue in changed["sequences"][0]["captions"]
+    )
