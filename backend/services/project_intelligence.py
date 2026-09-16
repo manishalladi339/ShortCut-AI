@@ -155,6 +155,10 @@ def _cluster_topics(
                 "label": _topic_label(cluster["rows"]),
                 "unit_count": len(cluster["rows"]),
                 "asset_ids": sorted({row["asset_id"] for row in cluster["rows"]}),
+                "member_keys": [
+                    str(row["asset_id"]) + ":" + str(row["unit_index"])
+                    for row in cluster["rows"]
+                ],
                 "evidence": evidence,
             }
         )
