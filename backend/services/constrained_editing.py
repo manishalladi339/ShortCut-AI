@@ -632,158 +632,6 @@ def _motion_operations(
         intent = active[0] if len(active) == 1 else "visual_motion"
     return [intent], operations
 
-def _transition_operations(
-    *,
-    instruction: str,
-    sequence: dict,
-    scope_start: int,
-    scope_end: int,
-) -> tuple[list[str], list[dict]]:
-    """Plan visual entrance/exit transitions without changing timeline geometry."""
-    lowered = instruction.lower()
-    if any(term in lowered for term in ("caption", "captions", "subtitle", "subtitles")):
-        return [], []
-    if (
-        any(term in lowered for term in ("music", "soundtrack", "audio bed"))
-        and not any(term in lowered for term in ("shot", "clip", "video", "b-roll", "broll", "overlay"))
-    ):
-        return [], []
-
-    mentions_broll = any(term in lowered for term in ("b-roll", "broll", "b roll", "overlay"))
-    remove = bool(
-        re.search(
-            r"\b(?:remove|clear|disable|turn\s+off)\s+(?:the\s+)?(?:visual\s+)?transitions?\b",
-            lowered,
-        )
-        or re.search(r"\bno\s+transitions?\b", lowered)
-    )
-    mentions_fade = bool(re.search(r"\bfade\b", lowered))
-    mentions_slide = bool(re.search(r"\bslide\b", lowered))
-    if not (remove or mentions_fade or mentions_slide):
-        return [], []
-
-    if re.search(r"\b(?:quick|fast|snappy)\b", lowered):
-        duration_sec = 0.18
-    elif re.search(r"\b(?:slow|smooth|gentle)\b", lowered):
-        duration_sec = 0.40
-    else:
-        duration_sec = 0.25
-
-    set_in = False
-    set_out = False
-    kind: str | None = None
-
-    if remove:
-        mode = "remove_transition"
-        set_in = True
-        set_out = True
-    elif mentions_fade:
-        kind = "fade"
-        has_in = bool(re.search(r"\bin\b", lowered))
-        has_out = bool(re.search(r"\bout\b", lowered))
-        set_in = has_in or not has_out
-        set_out = has_out or not has_in
-        mode = "fade_transition"
-    else:
-        if re.search(r"\b(?:from\s+(?:the\s+)?left|slide\s+(?:in\s+)?from\s+(?:the\s+)?left)\b", lowered):
-            kind = "slide_left"
-        elif re.search(r"\b(?:from\s+(?:the\s+)?right|slide\s+(?:in\s+)?from\s+(?:the\s+)?right)\b", lowered):
-            kind = "slide_right"
-        elif re.search(r"\b(?:from\s+(?:the\s+)?bottom|slide\s+up)\b", lowered):
-            kind = "slide_up"
-        elif re.search(r"\b(?:from\s+(?:the\s+)?top|slide\s+down)\b", lowered):
-            kind = "slide_down"
-        elif re.search(r"\b(?:to\s+(?:the\s+)?left|out\s+left)\b", lowered):
-            kind = "slide_left"
-        elif re.search(r"\b(?:to\s+(?:the\s+)?right|out\s+right)\b", lowered):
-            kind = "slide_right"
-        elif re.search(r"\b(?:to\s+(?:the\s+)?top|out\s+up)\b", lowered):
-            kind = "slide_up"
-        elif re.search(r"\b(?:to\s+(?:the\s+)?bottom|out\s+down)\b", lowered):
-            kind = "slide_down"
-        else:
-            raise ValueError(
-                "Slide transitions need a direction such as from left, from right, "
-                "slide up, or slide down."
-            )
-
-        set_out = bool(
-            re.search(
-                r"\b(?:out|exit|to\s+(?:the\s+)?(?:left|right|top|bottom))\b",
-                lowered,
-            )
-        )
-        set_in = not set_out
-        mode = f"{kind}_{'out' if set_out else 'in'}"
-
-    operations: list[dict] = []
-    tps = _ticks_per_second(sequence)
-    for track in sequence.get("tracks") or []:
-        kind_name = track.get("kind")
-        if mentions_broll:
-            if kind_name != "overlay" or track.get("locked"):
-                continue
-            component = "broll"
-        else:
-            if kind_name != "video" or track.get("locked"):
-                continue
-            component = "story"
-
-        for clip in track.get("clips") or []:
-            if not _contained(
-                int(clip.get("timeline_start") or 0),
-                int(clip.get("duration") or 0),
-                scope_start,
-                scope_end,
-            ):
-                continue
-            if component == "broll":
-                metadata = clip.get("metadata") or {}
-                if not (metadata.get("broll") or metadata.get("ai_plan_id")):
-                    continue
-
-            payload = {
-                "sequence_id": sequence["id"],
-                "track_id": track["id"],
-                "clip_id": clip["id"],
-            }
-            if remove:
-                payload["transition_in"] = None
-                payload["transition_out"] = None
-                reason = (
-                    "Remove visual transitions while preserving clip timing, source "
-                    "range and all other clip properties."
-                )
-            else:
-                clip_duration = int(clip.get("duration") or 0)
-                transition_ticks = max(
-                    1,
-                    min(round(duration_sec * tps), max(1, clip_duration // 2)),
-                )
-                transition = {"kind": kind, "duration": transition_ticks}
-                if set_in:
-                    payload["transition_in"] = transition
-                if set_out:
-                    payload["transition_out"] = transition
-                reason = (
-                    f"Apply {kind.replace('_', ' ')} transition "
-                    f"({transition_ticks / tps:.2f}s) without changing timeline "
-                    "position, duration or source range."
-                )
-
-            operations.append(
-                _operation(
-                    operation="set_clip_transition",
-                    component=component,
-                    payload=payload,
-                    reason=reason,
-                )
-            )
-
-    return [mode], operations
-
-
-
 def _caption_operations(
     *,
     instruction: str,
@@ -1100,7 +948,6 @@ def build_constrained_proposal(
         pacing_operations,
         _speaker_removal_operations,
         _motion_operations,
-        _transition_operations,
         _caption_operations,
         _broll_operations,
         _music_operations,
@@ -1121,7 +968,7 @@ def build_constrained_proposal(
         raise ValueError(
             "Create With Me currently supports scoped pacing changes, diarized "
             "speaker removal with sequence-wide ripple, semantic B-roll "
-            "replacement/removal, bounded zoom/pan visual motion, visual fade/slide transitions, caption "
+            "replacement/removal, bounded zoom/pan visual motion, caption "
             "styling/animation/removal, and music volume/removal."
         )
 
@@ -1217,50 +1064,6 @@ def apply_constrained_operations(
 
         op = operation.get("operation")
         component = operation.get("component")
-
-        if op == "set_clip_transition":
-            if component not in {"story", "broll"}:
-                raise ValueError("Visual transition operation has invalid component")
-            track = next(
-                (
-                    item
-                    for item in sequence.get("tracks") or []
-                    if item.get("id") == payload.get("track_id")
-                ),
-                None,
-            )
-            expected_kind = "video" if component == "story" else "overlay"
-            if not track or track.get("kind") != expected_kind or track.get("locked"):
-                raise ValueError("Transition target track is unavailable or locked")
-            clip = next(
-                (
-                    item
-                    for item in track.get("clips") or []
-                    if item.get("id") == payload.get("clip_id")
-                ),
-                None,
-            )
-            if not clip:
-                raise ValueError("Transition target clip no longer exists")
-            if component == "broll":
-                metadata = clip.get("metadata") or {}
-                if not (metadata.get("broll") or metadata.get("ai_plan_id")):
-                    raise ValueError("Transition proposal cannot mutate non-AI B-roll")
-
-            allowed = {
-                "sequence_id",
-                "track_id",
-                "clip_id",
-                "transition_in",
-                "transition_out",
-            }
-            if set(payload) - allowed:
-                raise ValueError("Transition proposal contains unsupported properties")
-            if "transition_in" in payload:
-                clip["transition_in"] = deepcopy(payload["transition_in"])
-            if "transition_out" in payload:
-                clip["transition_out"] = deepcopy(payload["transition_out"])
-            continue
 
         if op == "set_motion_keyframes":
             if component not in {"story", "broll"}:
