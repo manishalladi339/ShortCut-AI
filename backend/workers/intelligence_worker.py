@@ -29,6 +29,49 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("shortcut.intelligence-worker")
 
 
+async def _complete_already_analyzed(job: dict, record: dict, asset: dict) -> bool:
+    if record.get("status") != "completed" or record.get("job_id") != job["id"]:
+        return False
+
+    now = utc_now()
+    await get_db().assets.update_one(
+        {"id": asset["id"]},
+        {
+            "$set": {
+                "language": record.get("language"),
+                "intelligence_status": "completed",
+                "intelligence_id": record["id"],
+                "updated_at": now,
+            }
+        },
+    )
+    owned = await job_service.succeed(
+        job["id"],
+        {
+            "intelligence_id": record["id"],
+            "word_count": len(record.get("words") or []),
+            "segment_count": len(record.get("segments") or []),
+            "scene_count": len(record.get("scenes") or []),
+            "silence_count": len(record.get("silences") or []),
+            "rhythm_event_count": len(record.get("rhythm_events") or []),
+            "beat_grid_confidence": (record.get("beat_grid") or {}).get("confidence"),
+            "speaker_count": len(record.get("speakers") or []),
+            "visual_observation_count": len(record.get("visual_observations") or []),
+            "visual_embedded_count": len(record.get("visual_vectors") or []),
+            "semantic_unit_count": len(record.get("semantic_units") or []),
+            "embedded_unit_count": len(record.get("semantic_vectors") or []),
+            "reconciled_existing_intelligence": True,
+        },
+        lease_token=job["lease_token"],
+    )
+    if not owned:
+        logger.warning(
+            "lost lease while reconciling intelligence %s",
+            record["id"],
+        )
+    return True
+
+
 async def _recover_stale_intelligence() -> None:
     recovered = await job_service.recover_stale_jobs(JobType.media_intelligence)
     if not recovered:
@@ -111,6 +154,8 @@ async def process_one() -> bool:
         asset = await db.assets.find_one({"id": job["asset_id"], "user_id": job["user_id"]}, {"_id": 0})
         if not record or not asset:
             raise RuntimeError("analysis record or asset no longer exists")
+        if await _complete_already_analyzed(job, record, asset):
+            return True
         await db.media_intelligence.update_one({"id": intelligence_id}, {"$set": {"status": "running", "updated_at": utc_now()}})
 
         with TemporaryDirectory(prefix="shortcut-intelligence-") as tmp:
@@ -172,6 +217,7 @@ async def process_one() -> bool:
             "semantic_units": semantic_units, "semantic_vectors": semantic_vectors, "embedding_model": settings.EMBEDDING_MODEL,
             "provider": transcript.get("provider"), "model": transcript.get("model"),
         }
+        await _progress(job, 95)
         now = utc_now()
         await db.media_intelligence.update_one({"id": intelligence_id}, {"$set": {**result, "status": "completed", "updated_at": now}})
         await db.assets.update_one({"id": asset["id"]}, {"$set": {"language": result["language"], "intelligence_status": "completed", "intelligence_id": intelligence_id, "updated_at": now}})
