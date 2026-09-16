@@ -13,44 +13,11 @@ from models.export import ExportOut, ExportRequest
 from models.job import JobType
 from models.render_plan import RenderPlan
 from services import job_service
+from services.export_recovery import export_updates_from_job
 from services.render_plan import compile_render_plan
 from services.storage import get_storage
 
 router = APIRouter(prefix="/projects", tags=["render"])
-
-
-def export_updates_from_job(doc: dict, job: dict, *, now=None) -> dict:
-    """Pure reconciliation policy used by API reads and unit tests."""
-    fallback_now = now or utc_now()
-    if job.get("status") == "succeeded":
-        result = job.get("result") or {}
-        if (
-            result.get("export_id") == doc.get("id")
-            and result.get("storage_key")
-        ):
-            return {
-                "status": "completed",
-                "active": False,
-                "storage_key": result.get("storage_key"),
-                "duration_sec": result.get("duration_sec"),
-                "render_metadata": result.get("render_metadata") or {},
-                "qa_status": result.get("qa_status"),
-                "qa_report": result.get("qa_report"),
-                "updated_at": job.get("finished_at") or job.get("updated_at") or fallback_now,
-            }
-    if job.get("status") == "failed" and doc.get("status") != "completed":
-        return {
-            "status": "failed",
-            "active": False,
-            "updated_at": job.get("finished_at") or job.get("updated_at") or fallback_now,
-        }
-    if job.get("status") == "queued" and doc.get("status") == "rendering":
-        return {
-            "status": "queued",
-            "active": True,
-            "updated_at": job.get("updated_at") or fallback_now,
-        }
-    return {}
 
 
 async def _reconcile_export_from_job(doc: dict) -> dict:
@@ -72,7 +39,7 @@ async def _reconcile_export_from_job(doc: dict) -> dict:
     if not job:
         return doc
 
-    updates = export_updates_from_job(doc, job)
+    updates = export_updates_from_job(doc, job, fallback_now=utc_now())
     if not updates:
         return doc
 
