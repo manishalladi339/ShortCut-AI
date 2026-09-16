@@ -188,3 +188,40 @@ def test_unsupported_primary_cut_request_is_rejected():
         assert "Primary story cuts are preserved" in str(exc)
     else:
         raise AssertionError("unsupported primary-cut request should fail")
+
+
+
+def test_scoped_edit_never_mutates_an_item_that_crosses_the_scope_boundary():
+    state = _state()
+    overlay = next(
+        track for track in state["sequences"][0]["tracks"] if track["id"] == "overlay"
+    )
+    overlay["clips"][0]["timeline_start"] = 9000
+    overlay["clips"][0]["duration"] = 3000
+    overlay["clips"][0]["source_duration"] = 3000
+
+    try:
+        build_constrained_proposal(
+            project_id="project-1",
+            user_id="user-1",
+            state=state,
+            instruction="Remove B-roll from the intro",
+        )
+    except ValueError as exc:
+        assert "no matching timeline items" in str(exc)
+    else:
+        raise AssertionError("boundary-crossing B-roll must be preserved")
+
+
+def test_local_music_request_does_not_change_a_full_length_music_bed():
+    try:
+        build_constrained_proposal(
+            project_id="project-1",
+            user_id="user-1",
+            state=_state(),
+            instruction="Lower the music in the intro",
+        )
+    except ValueError as exc:
+        assert "no matching timeline items" in str(exc)
+    else:
+        raise AssertionError("localized music change must not leak outside scope")
