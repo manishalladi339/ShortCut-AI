@@ -26,6 +26,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("shortcut.media-worker")
 
 
+def _worker_lease_seconds() -> int:
+    return max(
+        settings.JOB_LEASE_SECONDS,
+        settings.MEDIA_PROBE_TIMEOUT_SEC
+        + settings.MEDIA_DERIVATIVE_TIMEOUT_SEC
+        + 300,
+    )
+
+
 async def _complete_already_processed(job: dict, asset: dict) -> bool:
     if (
         asset.get("processing_status") != "ready"
@@ -76,6 +85,7 @@ async def _progress(job: dict, progress: int) -> None:
         job["id"],
         progress,
         lease_token=job["lease_token"],
+        lease_seconds=_worker_lease_seconds(),
     )
     if not ok:
         raise RuntimeError("media job lease was lost")
@@ -95,7 +105,10 @@ async def _sync_asset_failure(job: dict, final: bool) -> None:
 
 async def process_one() -> bool:
     await _recover_stale_assets()
-    job = await job_service.claim_next(JobType.media_probe)
+    job = await job_service.claim_next(
+        JobType.media_probe,
+        lease_seconds=_worker_lease_seconds(),
+    )
     if not job:
         return False
 
@@ -180,8 +193,6 @@ async def process_one() -> bool:
 
 
 async def run_forever() -> None:
-    from core.config import settings
-
     while True:
         did_work = await process_one()
         if not did_work:
