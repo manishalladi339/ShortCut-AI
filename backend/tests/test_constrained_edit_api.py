@@ -4,7 +4,7 @@
 def _project_payload():
     return {
         "title": "TEST_Constrained_Edit",
-        "content_type": "social_short",
+        "content_type": "podcast",
         "creation_mode": "create_with_me",
         "target_platforms": ["ig_reels"],
     }
