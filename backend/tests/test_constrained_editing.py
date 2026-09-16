@@ -490,3 +490,90 @@ def test_additional_semantic_operation_builds_reviewable_proposal():
     assert proposal["interpreted_intents"] == ["replace_broll"]
     assert proposal["operations"] == [extra]
     assert "primary story clips" in proposal["preserve_rules"][-1]
+
+
+
+def test_repair_caption_preserves_text_and_replaces_one_cue_with_reviewed_parts():
+    state = _state()
+    sequence = state["sequences"][0]
+    sequence["captions"] = [
+        {
+            "id": "cap",
+            "start": 1000,
+            "duration": 3000,
+            "text": "One caption becomes two parts",
+            "style": {"source": "transcript"},
+        }
+    ]
+    operation = {
+        "id": "qa-1",
+        "operation": "repair_caption",
+        "component": "captions",
+        "payload": {
+            "sequence_id": "seq",
+            "caption_id": "cap",
+            "replacements": [
+                {
+                    "id": "qa-a",
+                    "start": 1200,
+                    "duration": 1200,
+                    "text": "One caption",
+                    "style": {"source": "transcript", "qa_repaired": True},
+                },
+                {
+                    "id": "qa-b",
+                    "start": 2400,
+                    "duration": 1400,
+                    "text": "becomes two parts",
+                    "style": {"source": "transcript", "qa_repaired": True},
+                },
+            ],
+        },
+        "reason": "Repair QA caption",
+    }
+
+    changed = apply_constrained_operations(state=state, operations=[operation])
+    cues = changed["sequences"][0]["captions"]
+    assert [cue["id"] for cue in cues] == ["qa-a", "qa-b"]
+    assert " ".join(cue["text"] for cue in cues) == "One caption becomes two parts"
+    assert cues[0]["start"] == 1200
+    assert cues[1]["start"] == 2400
+
+
+def test_repair_caption_refuses_text_rewrite():
+    state = _state()
+    sequence = state["sequences"][0]
+    sequence["captions"] = [
+        {
+            "id": "cap",
+            "start": 1000,
+            "duration": 3000,
+            "text": "Keep these exact words",
+            "style": {},
+        }
+    ]
+    operation = {
+        "id": "qa-1",
+        "operation": "repair_caption",
+        "component": "captions",
+        "payload": {
+            "sequence_id": "seq",
+            "caption_id": "cap",
+            "replacements": [
+                {
+                    "id": "qa-a",
+                    "start": 1000,
+                    "duration": 3000,
+                    "text": "Different words",
+                    "style": {},
+                }
+            ],
+        },
+        "reason": "Invalid rewrite",
+    }
+    try:
+        apply_constrained_operations(state=state, operations=[operation])
+    except ValueError as exc:
+        assert "preserve the original caption text" in str(exc)
+    else:
+        raise AssertionError("QA repair must not rewrite caption text")
