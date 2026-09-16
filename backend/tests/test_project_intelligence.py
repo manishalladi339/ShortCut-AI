@@ -79,3 +79,19 @@ def test_project_intelligence_handles_assets_without_semantic_vectors():
     )
     assert result["semantic_unit_count"] == 0
     assert result["topic_clusters"] == []
+
+
+
+def test_latest_records_per_asset_prefers_newest_analysis():
+    from services.project_intelligence import latest_records_per_asset
+
+    records = [
+        {"id": "old", "asset_id": "asset-a", "updated_at": "2026-09-01T00:00:00"},
+        {"id": "new", "asset_id": "asset-a", "updated_at": "2026-09-02T00:00:00"},
+        {"id": "other", "asset_id": "asset-b", "updated_at": "2026-09-01T00:00:00"},
+    ]
+    selected = latest_records_per_asset(records)
+    assert [(item["asset_id"], item["id"]) for item in selected] == [
+        ("asset-a", "new"),
+        ("asset-b", "other"),
+    ]
