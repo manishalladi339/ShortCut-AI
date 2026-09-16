@@ -23,6 +23,10 @@ class Timebase(BaseModel):
 
 class TransitionKind(str, Enum):
     fade = "fade"
+    slide_left = "slide_left"
+    slide_right = "slide_right"
+    slide_up = "slide_up"
+    slide_down = "slide_down"
 
 
 class ClipTransition(BaseModel):
