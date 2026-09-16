@@ -90,4 +90,13 @@ export const aiPlansApi = {
       method: "POST",
       body,
     }),
+  feedback: (
+    projectId: string,
+    planId: string,
+    body: { outcome: "accepted" | "modified" | "rejected"; notes?: string },
+  ) =>
+    api(`/projects/${projectId}/ai-plans/${planId}/feedback`, {
+      method: "POST",
+      body,
+    }),
 };
