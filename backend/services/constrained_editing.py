@@ -420,6 +420,114 @@ def _apply_speaker_ripple(sequence: dict, payload: dict) -> None:
     sequence["captions"] = next_captions
 
 
+def _motion_operations(
+    *,
+    instruction: str,
+    sequence: dict,
+    scope_start: int,
+    scope_end: int,
+) -> tuple[list[str], list[dict]]:
+    """Plan appearance-only motion without changing clip timing or source ranges."""
+    lowered = instruction.lower()
+
+    remove_motion = bool(
+        re.search(
+            r"\b(?:remove|disable|clear|turn\s+off)\s+(?:the\s+)?"
+            r"(?:motion|push[- ]?in|zoom)\b",
+            lowered,
+        )
+        or re.search(r"\b(?:make|keep)\s+(?:this\s+|the\s+)?(?:shot|clip)\s+static\b", lowered)
+    )
+    push_in = bool(
+        re.search(
+            r"\b(?:push[- ]?in|zoom\s+in|ken\s+burns)\b",
+            lowered,
+        )
+    )
+    if not remove_motion and not push_in:
+        return [], []
+
+    if remove_motion:
+        mode = "remove_motion"
+    else:
+        mode = "push_in"
+
+    if re.search(r"\b(?:strong|stronger|dramatic|punchy)\b", lowered):
+        zoom_multiplier = 1.12
+    elif re.search(r"\b(?:subtle|gentle|slow|slight)\b", lowered):
+        zoom_multiplier = 1.05
+    else:
+        zoom_multiplier = 1.08
+
+    operations: list[dict] = []
+    for track in sequence.get("tracks") or []:
+        if track.get("kind") != "video" or track.get("locked"):
+            continue
+        for clip in track.get("clips") or []:
+            if not _contained(
+                int(clip.get("timeline_start") or 0),
+                int(clip.get("duration") or 0),
+                scope_start,
+                scope_end,
+            ):
+                continue
+
+            transform = deepcopy(clip.get("transform") or {})
+            base_scale = float(transform.get("scale", 1.0))
+            base_x = float(transform.get("position_x", 0.0))
+            base_y = float(transform.get("position_y", 0.0))
+
+            if mode == "remove_motion":
+                keyframes: list[dict] = []
+                reason = (
+                    "Remove transform motion while preserving this clip's static framing, "
+                    "timeline position, duration and source range."
+                )
+                preset = "static"
+            else:
+                end_scale = round(min(10.0, max(base_scale + 0.01, base_scale * zoom_multiplier)), 6)
+                if end_scale <= base_scale:
+                    continue
+                keyframes = [
+                    {
+                        "at": 0.0,
+                        "scale": base_scale,
+                        "position_x": base_x,
+                        "position_y": base_y,
+                        "easing": "ease_in_out",
+                    },
+                    {
+                        "at": 1.0,
+                        "scale": end_scale,
+                        "position_x": base_x,
+                        "position_y": base_y,
+                        "easing": "ease_in_out",
+                    },
+                ]
+                reason = (
+                    f"Add a bounded push-in from scale {base_scale:.3f} to "
+                    f"{end_scale:.3f} without changing clip timing or source media."
+                )
+                preset = "push_in"
+
+            operations.append(
+                _operation(
+                    operation="set_motion_keyframes",
+                    component="story",
+                    payload={
+                        "sequence_id": sequence["id"],
+                        "track_id": track["id"],
+                        "clip_id": clip["id"],
+                        "keyframes": keyframes,
+                        "motion_preset": preset,
+                    },
+                    reason=reason,
+                )
+            )
+
+    return [mode], operations
+
+
 def _caption_operations(
     *,
     instruction: str,
@@ -735,6 +843,7 @@ def build_constrained_proposal(
     for planner in (
         pacing_operations,
         _speaker_removal_operations,
+        _motion_operations,
         _caption_operations,
         _broll_operations,
         _music_operations,
@@ -755,8 +864,8 @@ def build_constrained_proposal(
         raise ValueError(
             "Create With Me currently supports scoped pacing changes, diarized "
             "speaker removal with sequence-wide ripple, semantic B-roll "
-            "replacement/removal, caption styling/animation/removal, and music "
-            "volume/removal."
+            "replacement/removal, bounded visual push-in motion, caption "
+            "styling/animation/removal, and music volume/removal."
         )
 
     structural = [
@@ -797,10 +906,15 @@ def build_constrained_proposal(
     preserve_rules = [
         f"Preserve all timeline content outside {start_sec:.2f}s–{end_sec:.2f}s.",
     ]
-    if "story" in touched:
+    if structural:
         preserve_rules.append(
             "Ripple synchronized timeline items globally while preserving retained "
             "primary clip source ranges and ordering."
+        )
+    elif "story" in touched:
+        preserve_rules.append(
+            "Preserve primary clip timing, ordering and source ranges; change only "
+            "the approved visual transform motion."
         )
     else:
         preserve_rules.append("Do not regenerate or reorder primary story clips.")
@@ -846,6 +960,51 @@ def apply_constrained_operations(
 
         op = operation.get("operation")
         component = operation.get("component")
+
+        if op == "set_motion_keyframes":
+            if component != "story":
+                raise ValueError("Motion-keyframe operation has invalid component")
+            track = next(
+                (
+                    item
+                    for item in sequence.get("tracks") or []
+                    if item.get("id") == payload.get("track_id")
+                ),
+                None,
+            )
+            if not track or track.get("kind") != "video" or track.get("locked"):
+                raise ValueError("Motion target video track is unavailable or locked")
+            clip = next(
+                (
+                    item
+                    for item in track.get("clips") or []
+                    if item.get("id") == payload.get("clip_id")
+                ),
+                None,
+            )
+            if not clip:
+                raise ValueError("Motion target clip no longer exists")
+
+            allowed = {
+                "sequence_id",
+                "track_id",
+                "clip_id",
+                "keyframes",
+                "motion_preset",
+            }
+            if set(payload) - allowed:
+                raise ValueError("Motion proposal contains unsupported properties")
+
+            keyframes = deepcopy(payload.get("keyframes") or [])
+            transform = deepcopy(clip.get("transform") or {})
+            transform["keyframes"] = keyframes
+            clip["transform"] = transform
+            clip["metadata"] = {
+                **(clip.get("metadata") or {}),
+                "motion_preset": str(payload.get("motion_preset") or "custom"),
+                "motion_keyframe_count": len(keyframes),
+            }
+            continue
 
         if op == "retime_scope":
             if component != "story":
