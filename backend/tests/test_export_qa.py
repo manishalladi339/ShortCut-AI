@@ -165,3 +165,61 @@ def test_audio_level_warnings_are_not_marked_auto_fixable_yet():
     ]
     assert len(level_issues) == 2
     assert all(item["auto_fixable"] is False for item in level_issues)
+
+
+
+def test_mastering_qa_passes_within_loudness_and_peak_tolerance():
+    from services.export_qa import _mastering_issues
+
+    issues, checks = _mastering_issues(
+        {
+            "status": "applied",
+            "target_lufs": -14.0,
+            "target_true_peak_dbtp": -1.5,
+            "target_lra": 11.0,
+            "after": {
+                "integrated_lufs": -14.2,
+                "true_peak_dbtp": -1.55,
+                "lra": 7.0,
+            },
+        }
+    )
+    assert issues == []
+    assert checks[0]["id"] == "audio_mastering"
+    assert checks[0]["status"] == "passed"
+
+
+def test_mastering_qa_flags_loudness_and_true_peak_miss():
+    from services.export_qa import _mastering_issues
+
+    issues, checks = _mastering_issues(
+        {
+            "status": "applied",
+            "target_lufs": -14.0,
+            "target_true_peak_dbtp": -1.5,
+            "after": {
+                "integrated_lufs": -16.1,
+                "true_peak_dbtp": -0.7,
+                "lra": 6.0,
+            },
+        }
+    )
+    codes = {issue["code"] for issue in issues}
+    assert "audio.mastering_loudness_miss" in codes
+    assert "audio.mastering_peak_miss" in codes
+    assert checks[0]["status"] == "warning"
+
+
+def test_mastering_qa_accepts_no_signal_skip():
+    from services.export_qa import _mastering_issues
+
+    issues, checks = _mastering_issues(
+        {
+            "status": "skipped_no_signal",
+            "target_lufs": -14.0,
+            "target_true_peak_dbtp": -1.5,
+            "after": None,
+        }
+    )
+    assert issues == []
+    assert checks[0]["status"] == "passed"
