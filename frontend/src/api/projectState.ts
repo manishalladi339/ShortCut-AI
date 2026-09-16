@@ -2,6 +2,23 @@ import { api } from "./client";
 
 export type TrackKind = "video" | "overlay" | "audio" | "caption";
 
+export interface TransformKeyframe {
+  at: number;
+  scale: number;
+  position_x: number;
+  position_y: number;
+  easing: "linear" | "ease_in" | "ease_out" | "ease_in_out";
+}
+
+export interface ClipTransform {
+  scale: number;
+  position_x: number;
+  position_y: number;
+  rotation_deg: number;
+  opacity: number;
+  keyframes: TransformKeyframe[];
+}
+
 export interface ProjectClip {
   id: string;
   asset_id: string;
@@ -12,7 +29,7 @@ export interface ProjectClip {
   playback_rate: number;
   volume: number;
   enabled?: boolean;
-  transform?: Record<string, any>;
+  transform?: ClipTransform;
   transition_in?: Record<string, any> | null;
   transition_out?: Record<string, any> | null;
   ducking?: Record<string, any> | null;
