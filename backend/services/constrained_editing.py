@@ -133,18 +133,9 @@ def _caption_operations(
     operations: list[dict] = []
     intents: list[str] = []
 
-    remove = any(
-        term in lowered
-        for term in (
-            "remove caption",
-            "remove subtitle",
-            "delete caption",
-            "delete subtitle",
-            "hide caption",
-            "hide subtitle",
-            "no caption",
-            "no subtitle",
-        )
+    remove = (
+        any(action in lowered for action in ("remove", "delete", "hide"))
+        or bool(re.search(r"\bno\s+(?:caption|captions|subtitle|subtitles)\b", lowered))
     )
     if remove:
         intents.append("remove_captions")
@@ -252,13 +243,13 @@ def _music_operations(
         return [], []
 
     mode = None
-    if any(term in lowered for term in ("remove music", "delete music", "no music")):
+    if any(term in lowered for term in ("remove", "delete")) or re.search(r"\bno\s+music\b", lowered):
         mode = "remove_music"
-    elif any(term in lowered for term in ("mute music", "silence music")):
+    elif any(term in lowered for term in ("mute", "silence")):
         mode = "mute_music"
-    elif any(term in lowered for term in ("lower music", "quieter music", "reduce music", "turn down music")):
+    elif any(term in lowered for term in ("lower", "quieter", "reduce", "turn down", "decrease")):
         mode = "lower_music"
-    elif any(term in lowered for term in ("raise music", "louder music", "increase music", "turn up music")):
+    elif any(term in lowered for term in ("raise", "louder", "increase", "turn up")):
         mode = "raise_music"
     if mode is None:
         return [], []
