@@ -18,7 +18,7 @@ from services.constrained_editing import (
     _operation,
     _ticks_per_second,
 )
-from services.embeddings import get_embedding_provider
+from services.embeddings import EmbeddingError, get_embedding_provider
 from services.project_intelligence import latest_records_per_asset
 
 
@@ -48,6 +48,15 @@ def _explicit_visual_query(instruction: str) -> str | None:
         return None
     query = match.group(1).strip(" .,!?:;")
     return query[:500] if len(query) >= 3 else None
+
+
+async def _embed_query(text: str) -> list[float]:
+    try:
+        return (await get_embedding_provider().embed([text]))[0]
+    except EmbeddingError as exc:
+        raise ValueError(
+            "Semantic B-roll replacement could not embed the requested visual context."
+        ) from exc
 
 
 def _best_primary_clip(sequence: dict, target: dict) -> dict | None:
@@ -210,7 +219,7 @@ async def build_semantic_broll_replacements(
     explicit_query = _explicit_visual_query(instruction)
     explicit_vector: list[float] = []
     if explicit_query:
-        explicit_vector = (await get_embedding_provider().embed([explicit_query]))[0]
+        explicit_vector = await _embed_query(explicit_query)
 
     operations: list[dict] = []
     used_sources: set[tuple[str, int]] = set()
@@ -232,13 +241,11 @@ async def build_semantic_broll_replacements(
             old_query = _old_visual_query(target, records_by_id)
             if old_query:
                 replacement_query = replacement_query or old_query
-                context_vector = (await get_embedding_provider().embed([old_query]))[0]
+                context_vector = await _embed_query(old_query)
 
         if not context_vector:
             replacement_query = replacement_query or instruction.strip()
-            context_vector = (
-                await get_embedding_provider().embed([replacement_query])
-            )[0]
+            context_vector = await _embed_query(replacement_query)
 
         ranked = rank_broll_candidates(
             visual_candidates,
