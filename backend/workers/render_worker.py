@@ -13,6 +13,7 @@ from db.mongo import get_db
 from models.job import JobType
 from models.render_plan import RenderPlan
 from services import job_service
+from services.export_qa import analyze_export
 from services.media_probe import probe
 from services.render_executor import execute
 from services.storage import get_storage
@@ -69,6 +70,8 @@ async def process_one() -> bool:
             if not metadata.get("video_codec"):
                 raise RuntimeError("render QC failed: output has no video stream")
 
+            await job_service.set_progress(job["id"], 82)
+            qa_report = analyze_export(output, plan)
             await job_service.set_progress(job["id"], 90)
 
             storage_key = (
@@ -89,6 +92,8 @@ async def process_one() -> bool:
                     "storage_key": storage_key,
                     "duration_sec": duration_sec,
                     "render_metadata": metadata,
+                    "qa_status": qa_report.get("status"),
+                    "qa_report": qa_report,
                     "updated_at": now,
                 }
             },
@@ -100,6 +105,8 @@ async def process_one() -> bool:
                 "storage_key": storage_key,
                 "duration_sec": duration_sec,
                 "render_metadata": metadata,
+                "qa_status": qa_report.get("status"),
+                "qa_report": qa_report,
                 **result,
             },
         )
