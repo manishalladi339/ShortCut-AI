@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+from models.export_qa import ExportQAReport
+
 
 class ExportRequest(BaseModel):
     sequence_id: str | None = None
@@ -23,5 +25,7 @@ class ExportOut(BaseModel):
     download_url: str | None = None
     duration_sec: float | None = None
     render_metadata: dict = Field(default_factory=dict)
+    qa_status: str | None = None
+    qa_report: ExportQAReport | None = None
     created_at: datetime
     updated_at: datetime
