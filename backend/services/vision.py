@@ -38,9 +38,13 @@ def _normalized_box(value: object) -> dict | None:
         return None
     x = max(0.0, min(1.0, x))
     y = max(0.0, min(1.0, y))
-    width = max(0.001, min(1.0 - x, width))
-    height = max(0.001, min(1.0 - y, height))
-    if width <= 0 or height <= 0:
+    available_width = 1.0 - x
+    available_height = 1.0 - y
+    if available_width <= 0.0 or available_height <= 0.0:
+        return None
+    width = min(available_width, width)
+    height = min(available_height, height)
+    if width < 0.001 or height < 0.001:
         return None
     return {
         "x": round(x, 6),
