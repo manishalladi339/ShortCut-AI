@@ -30,36 +30,41 @@ def _animation_tags(
     x: int,
     y: int,
     height: int,
-    duration_ms: int,
+    cue_duration_ms: int,
 ) -> str:
-    animation = animation.lower().strip()
-    if animation in {"", "none", "static"}:
+    """Return ASS tags for supported cue-level animations.
+
+    These animations intentionally operate at cue level. Word-by-word karaoke
+    requires word timing provenance and is handled separately in future work.
+    """
+    value = animation.strip().lower()
+    if value in {"", "none", "static"}:
         return f"\\pos({x},{y})"
 
-    if animation in {"fade", "fade_in", "fade-in"}:
-        fade_ms = min(140, max(40, duration_ms // 6))
-        return f"\\pos({x},{y})\\fad({fade_ms},{fade_ms})"
+    cue_duration_ms = max(1, cue_duration_ms)
+    intro_ms = min(220, max(80, cue_duration_ms // 4))
+    outro_ms = min(140, max(60, cue_duration_ms // 6))
 
-    if animation in {"pop", "punch", "bounce"}:
-        first = min(110, max(45, duration_ms // 6))
-        second = min(max(first + 40, 120), max(first + 40, duration_ms // 3))
-        second = min(second, duration_ms)
+    if value == "pop":
         return (
             f"\\pos({x},{y})"
-            r"\fscx88\fscy88"
-            + f"\\t(0,{first},\\fscx108\\fscy108)"
-            + f"\\t({first},{second},\\fscx100\\fscy100)"
+            r"\fscx82\fscy82"
+            + f"\\t(0,{intro_ms},\\fscx100\\fscy100)"
+            + f"\\fad(50,{outro_ms})"
         )
 
-    if animation in {"slide_up", "slide-up", "rise"}:
-        slide_ms = min(180, max(70, duration_ms // 4))
-        start_y = min(height - 8, y + max(28, round(height * 0.035)))
+    if value in {"slide_up", "rise"}:
+        offset = max(18, min(72, round(height * 0.025)))
+        start_y = min(height - 1, y + offset)
         return (
-            f"\\move({x},{start_y},{x},{y},0,{slide_ms})"
-            f"\\fad({min(70, slide_ms)},{min(90, max(40, duration_ms // 8))})"
+            f"\\move({x},{start_y},{x},{y},0,{intro_ms})"
+            + f"\\fad(70,{outro_ms})"
         )
 
-    # Unknown/untrusted values are rendered statically rather than interpreted.
+    if value == "fade":
+        return f"\\pos({x},{y})\\fad({intro_ms},{outro_ms})"
+
+    # Unknown style data must not create unpredictable ASS output.
     return f"\\pos({x},{y})"
 
 
@@ -68,11 +73,15 @@ def _cue_override(
     style: dict,
     width: int,
     height: int,
-    duration_sec: float,
+    cue_duration_ms: int,
 ) -> str:
     base_size = _base_font_size(height)
     size_scale = float(style.get("size_scale", 1.0))
     size_scale = max(0.5, min(2.0, size_scale))
+
+    preset = str(style.get("preset") or "default").lower()
+    if preset == "social":
+        size_scale *= 1.08
     font_size = max(12, min(160, round(base_size * size_scale)))
 
     position = str(style.get("vertical_position") or "default").lower()
@@ -84,35 +93,33 @@ def _cue_override(
     x = round(width / 2)
     y = round(height * y_ratio)
 
-    preset = str(style.get("preset") or "default").lower()
-    if preset in {"social", "bold"}:
-        border = 3
-        font_size = min(160, round(font_size * 1.08))
-        extra = r"\b1\blur0.35"
-    elif preset == "minimal":
+    if preset == "minimal":
         border = 1
-        extra = r"\b1"
+        spacing = 0
+    elif preset == "social":
+        border = 3
+        spacing = 0.4
     else:
         border = 2
-        extra = r"\b1"
+        spacing = 0
+    shadow = 0
 
     animation = str(style.get("animation") or "none")
-    duration_ms = max(1, round(max(0.001, duration_sec) * 1000))
-    motion = _animation_tags(
+    animation_tags = _animation_tags(
         animation=animation,
         x=x,
         y=y,
         height=height,
-        duration_ms=duration_ms,
+        cue_duration_ms=cue_duration_ms,
     )
 
     return (
         r"{\an2"
-        + motion
+        + animation_tags
         + f"\\fs{font_size}"
         + f"\\bord{border}"
-        + r"\shad0"
-        + extra
+        + f"\\shad{shadow}"
+        + f"\\fsp{spacing:.2f}"
         + "}"
     )
 
@@ -148,7 +155,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             style=cue.style or {},
             width=plan.width,
             height=plan.height,
-            duration_sec=duration_sec,
+            cue_duration_ms=max(1, round(duration_sec * 1000)),
         )
         text = _escape_ass_text(cue.text)
         lines.append(
