@@ -35,6 +35,7 @@ class ConstrainedEditOperation(BaseModel):
         "retime_scope",
         "repair_caption",
         "set_motion_keyframes",
+        "set_clip_transition",
     ]
     component: Literal["story", "broll", "music", "captions"]
     payload: dict[str, Any]
