@@ -65,7 +65,7 @@ export default function AIDirectorScreen() {
     try {
       const [p, a, s, plans, exports] = await Promise.all([
         projectsApi.get(id),
-        assetsApi.list({ project_id: id }),
+        assetsApi.list({ project_id: id, limit: 100 }),
         projectStateApi.get(id),
         aiPlansApi.list(id).catch(() => []),
         exportsApi.list(id).catch(() => []),
