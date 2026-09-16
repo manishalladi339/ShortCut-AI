@@ -859,6 +859,64 @@ def apply_constrained_operations(
             }
             continue
 
+        if op == "repair_caption":
+            if component != "captions":
+                raise ValueError("QA caption repair has invalid component")
+            caption_id = str(payload.get("caption_id") or "")
+            cue = next(
+                (
+                    item
+                    for item in sequence.get("captions") or []
+                    if item.get("id") == caption_id
+                ),
+                None,
+            )
+            if not cue:
+                raise ValueError("QA repair target caption no longer exists")
+
+            replacements = deepcopy(payload.get("replacements") or [])
+            if not replacements:
+                raise ValueError("QA caption repair contains no replacement cues")
+            ids = [str(item.get("id") or "") for item in replacements]
+            if any(not item for item in ids) or len(ids) != len(set(ids)):
+                raise ValueError("QA caption repair contains invalid replacement IDs")
+
+            original_start = int(cue.get("start") or 0)
+            original_end = original_start + int(cue.get("duration") or 0)
+            normalized_original = " ".join(str(cue.get("text") or "").split())
+            normalized_replacement = " ".join(
+                " ".join(str(item.get("text") or "").split())
+                for item in replacements
+            ).strip()
+            if normalized_replacement != normalized_original:
+                raise ValueError("QA caption repair must preserve the original caption text")
+
+            previous_end = None
+            for item in sorted(
+                replacements,
+                key=lambda value: (int(value.get("start") or 0), str(value.get("id") or "")),
+            ):
+                start = int(item.get("start") or 0)
+                duration = int(item.get("duration") or 0)
+                end = start + duration
+                if duration <= 0 or start < original_start or end > original_end:
+                    raise ValueError(
+                        "QA caption repair must stay inside the original caption interval"
+                    )
+                if previous_end is not None and start < previous_end:
+                    raise ValueError("QA caption repair replacement cues cannot overlap")
+                previous_end = end
+
+            sequence["captions"] = [
+                item
+                for item in sequence.get("captions") or []
+                if item.get("id") != caption_id
+            ] + replacements
+            sequence["captions"].sort(
+                key=lambda item: (int(item.get("start") or 0), str(item.get("id") or ""))
+            )
+            continue
+
         if op in {"update_caption", "remove_caption"}:
             if component != "captions":
                 raise ValueError("Caption operation has invalid component")
