@@ -635,3 +635,101 @@ def test_static_caption_instruction_disables_existing_animation():
         cue["style"]["animation"] == "none"
         for cue in changed["sequences"][0]["captions"]
     )
+
+
+
+def test_push_in_motion_is_reviewable_and_preserves_clip_timing():
+    state = _state()
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=state,
+        instruction="Add a subtle push-in to this shot",
+        scope_start_sec=0,
+        scope_end_sec=20,
+    )
+    assert proposal["interpreted_intents"] == ["push_in"]
+    assert len(proposal["operations"]) == 1
+    operation = proposal["operations"][0]
+    assert operation["operation"] == "set_motion_keyframes"
+    assert operation["component"] == "story"
+    assert operation["payload"]["motion_preset"] == "push_in"
+    assert len(operation["payload"]["keyframes"]) == 2
+
+    before = state["sequences"][0]["tracks"][0]["clips"][0]
+    changed = apply_constrained_operations(
+        state=state,
+        operations=proposal["operations"],
+    )
+    after = changed["sequences"][0]["tracks"][0]["clips"][0]
+
+    assert after["timeline_start"] == before["timeline_start"]
+    assert after["duration"] == before["duration"]
+    assert after["source_start"] == before["source_start"]
+    assert after["source_duration"] == before["source_duration"]
+    assert after["transform"]["keyframes"][0]["at"] == 0.0
+    assert after["transform"]["keyframes"][-1]["at"] == 1.0
+    assert after["transform"]["keyframes"][-1]["scale"] > after["transform"]["keyframes"][0]["scale"]
+    assert after["metadata"]["motion_preset"] == "push_in"
+
+
+def test_remove_motion_clears_only_keyframes():
+    state = _state()
+    clip = state["sequences"][0]["tracks"][0]["clips"][0]
+    clip["transform"] = {
+        "scale": 1.3,
+        "position_x": 24.0,
+        "position_y": -12.0,
+        "rotation_deg": 0.0,
+        "opacity": 1.0,
+        "keyframes": [
+            {
+                "at": 0.0,
+                "scale": 1.3,
+                "position_x": 24.0,
+                "position_y": -12.0,
+                "easing": "ease_in_out",
+            },
+            {
+                "at": 1.0,
+                "scale": 1.4,
+                "position_x": 24.0,
+                "position_y": -12.0,
+                "easing": "ease_in_out",
+            },
+        ],
+    }
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=state,
+        instruction="Remove the motion from this shot",
+        scope_start_sec=0,
+        scope_end_sec=20,
+    )
+    changed = apply_constrained_operations(
+        state=state,
+        operations=proposal["operations"],
+    )
+    after = changed["sequences"][0]["tracks"][0]["clips"][0]
+    assert after["transform"]["scale"] == 1.3
+    assert after["transform"]["position_x"] == 24.0
+    assert after["transform"]["position_y"] == -12.0
+    assert after["transform"]["keyframes"] == []
+    assert after["metadata"]["motion_preset"] == "static"
+
+
+def test_motion_refuses_clip_that_crosses_requested_scope_boundary():
+    try:
+        build_constrained_proposal(
+            project_id="project-1",
+            user_id="user-1",
+            state=_state(),
+            instruction="Add a slow push-in",
+            scope_start_sec=0,
+            scope_end_sec=5,
+        )
+    except ValueError as exc:
+        assert "no matching timeline items" in str(exc)
+    else:
+        raise AssertionError("motion must not leak outside the approved scope")
