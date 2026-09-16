@@ -62,8 +62,18 @@ def build_story_beats(
         return []
 
     roles = _roles_for_count(len(ordered_candidates))
-    groups = _partition(ordered_candidates, len(roles))
-    roles = roles[: len(groups)]
+    if len(ordered_candidates) == 1:
+        groups = [[ordered_candidates[0]]]
+    else:
+        middle_roles = roles[1:-1]
+        middle_items = ordered_candidates[1:-1]
+        middle_groups = _partition(middle_items, len(middle_roles))
+        groups = [
+            [ordered_candidates[0]],
+            *middle_groups,
+            [ordered_candidates[-1]],
+        ]
+        roles = [roles[0], *middle_roles[: len(middle_groups)], roles[-1]]
     topic_lookup = _topic_lookup(project_intelligence)
 
     raw_durations = [
