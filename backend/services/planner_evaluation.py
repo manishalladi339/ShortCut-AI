@@ -69,6 +69,27 @@ def _ducking_valid(payload: dict) -> bool:
     )
 
 
+def _transform_valid(payload: dict) -> bool:
+    transform = payload.get("transform")
+    if transform is None:
+        return True
+    try:
+        scale = float(transform.get("scale", 1.0))
+        position_x = float(transform.get("position_x", 0.0))
+        position_y = float(transform.get("position_y", 0.0))
+        rotation = float(transform.get("rotation_deg", 0.0))
+        opacity = float(transform.get("opacity", 1.0))
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return (
+        0.01 < scale <= 10.0
+        and -3600.0 <= rotation <= 3600.0
+        and 0.0 <= opacity <= 1.0
+        and abs(position_x) < 100000.0
+        and abs(position_y) < 100000.0
+    )
+
+
 def evaluate_plan(plan: dict) -> dict:
     candidates = plan.get("candidates") or []
     operations = plan.get("operations") or []
@@ -113,6 +134,7 @@ def evaluate_plan(plan: dict) -> dict:
     grounded = True
     transitions_valid = True
     ducking_valid = True
+    transforms_valid = True
     for operation in operations:
         operation_type = operation.get("operation")
         payload = operation.get("payload") or {}
@@ -125,6 +147,15 @@ def evaluate_plan(plan: dict) -> dict:
             )
             if key not in candidate_keys:
                 grounded = False
+            transforms_valid = transforms_valid and _transform_valid(payload)
+            reframe = metadata.get("reframe")
+            if reframe is not None:
+                if (
+                    reframe.get("observation_index") is None
+                    or reframe.get("identity_claimed") is not False
+                    or float(reframe.get("confidence") or 0.0) <= 0.0
+                ):
+                    grounded = False
 
         elif operation_type == "add_broll_overlay":
             if (
@@ -173,6 +204,14 @@ def evaluate_plan(plan: dict) -> dict:
         and set(story_evidence_keys) == valid_story_keys
     ) if candidates else not story_evidence_keys
 
+    smart_reframed_clip_count = sum(
+        1
+        for operation in operations
+        if operation.get("operation") == "add_clip"
+        and bool(
+            ((operation.get("payload") or {}).get("metadata") or {}).get("reframe")
+        )
+    )
     primary_clip_part_count = sum(
         1
         for operation in operations
@@ -212,12 +251,14 @@ def evaluate_plan(plan: dict) -> dict:
         "selected_duration_sec": selected_duration_sec,
         "dead_air_removed_sec": dead_air_removed_sec,
         "primary_clip_part_count": primary_clip_part_count,
+        "smart_reframed_clip_count": smart_reframed_clip_count,
         "rhythm_snapped_overlay_count": rhythm_snapped_overlay_count,
         "faded_overlay_count": faded_overlay_count,
         "music_bed_count": music_bed_count,
         "ducked_music_bed_count": ducked_music_bed_count,
         "transitions_valid": transitions_valid,
         "ducking_valid": ducking_valid,
+        "transforms_valid": transforms_valid,
         "average_highlight_score": (
             round(sum(scores) / len(scores), 4)
             if scores
