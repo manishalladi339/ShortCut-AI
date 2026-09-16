@@ -1,5 +1,5 @@
 """Tests for visual-subject normalization used by smart reframing."""
-from services.vision import _normalized_box, _normalized_subjects
+from services.vision import _data_url, _normalized_box, _normalized_subjects
 
 
 def test_normalized_box_clamps_to_frame_bounds():
@@ -57,3 +57,14 @@ def test_normalized_subjects_clamps_scores_and_drops_invalid_boxes():
     assert subjects[0]["label"] == "visible person"
     assert subjects[0]["prominence"] == 1.0
     assert subjects[0]["speaking_likelihood"] == 0.0
+
+
+
+def test_data_url_preserves_supported_image_mime(tmp_path):
+    png = tmp_path / "still.png"
+    png.write_bytes(b"not-real-png-but-mime-test")
+    assert _data_url(png).startswith("data:image/png;base64,")
+
+    webp = tmp_path / "still.webp"
+    webp.write_bytes(b"not-real-webp-but-mime-test")
+    assert _data_url(webp).startswith("data:image/webp;base64,")
