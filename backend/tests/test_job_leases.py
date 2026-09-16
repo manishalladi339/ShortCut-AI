@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 
 from models.job import JobOut
-from services.job_service import recovery_status
+from services.job_policy import recovery_status
 
 
 def _job(*, attempt: int, max_attempts: int) -> dict:
