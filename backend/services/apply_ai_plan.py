@@ -12,6 +12,7 @@ from models.project_state import (
     AudioDucking,
     CaptionCue,
     Clip,
+    ClipTransform,
     ClipTransition,
     ProjectStateDocument,
 )
@@ -39,6 +40,11 @@ def _transition(payload: dict, field: str) -> ClipTransition | None:
 def _ducking(payload: dict) -> AudioDucking | None:
     value = payload.get("ducking")
     return AudioDucking(**value) if value else None
+
+
+def _transform(payload: dict) -> ClipTransform:
+    value = payload.get("transform")
+    return ClipTransform(**value) if value else ClipTransform()
 
 
 async def apply_plan(
@@ -296,7 +302,9 @@ async def apply_plan(
             duration=int(payload["duration"]),
             source_start=source_start,
             source_duration=source_duration,
+            playback_rate=float(payload.get("playback_rate", 1.0)),
             volume=float(payload.get("volume", 1.0)),
+            transform=_transform(payload),
             transition_in=_transition(payload, "transition_in"),
             transition_out=_transition(payload, "transition_out"),
             ducking=_ducking(payload),
