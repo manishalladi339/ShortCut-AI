@@ -34,6 +34,7 @@ from services.project_intelligence import (
     build_and_store_project_intelligence,
     latest_records_per_asset,
 )
+from services.reframing import build_reframe_suggestion
 from services.rhythm_editing import map_rhythm_to_timeline, snap_forward_to_rhythm
 from services.semantic_search import cosine_similarity
 from services.silence_editing import snap_outward_to_silence
@@ -111,7 +112,15 @@ async def build_plan(
     asset_ids = [record["asset_id"] for record in records]
     asset_docs = await db.assets.find(
         {"id": {"$in": asset_ids}, "user_id": user_id},
-        {"_id": 0, "id": 1, "filename": 1, "duration_sec": 1, "kind": 1},
+        {
+            "_id": 0,
+            "id": 1,
+            "filename": 1,
+            "duration_sec": 1,
+            "kind": 1,
+            "width": 1,
+            "height": 1,
+        },
     ).to_list(len(asset_ids))
     assets = {asset["id"]: asset for asset in asset_docs}
     records_by_id = {record["id"]: record for record in records}
@@ -359,6 +368,26 @@ async def build_plan(
         semantic_vector = candidate.pop("semantic_vector")
         record = records_by_id.get(candidate["intelligence_id"]) or {}
         silences = record.get("silences") or []
+        asset = assets.get(candidate["asset_id"]) or {}
+
+        reframe = None
+        if body.smart_reframe:
+            reframe = build_reframe_suggestion(
+                record=record,
+                start=float(candidate["start"]),
+                end=float(candidate["end"]),
+                source_width=asset.get("width"),
+                source_height=asset.get("height"),
+                target_width=int(sequence["width"]),
+                target_height=int(sequence["height"]),
+            )
+        candidate["reframe_suggestion"] = reframe
+        if reframe:
+            candidate.setdefault("reasons", []).append(
+                "subject-aware reframe from visual observation "
+                f"{reframe['observation_index']} "
+                f"({reframe['strategy']}, confidence {reframe['confidence']:.2f})"
+            )
 
         if body.remove_dead_air:
             source_segments, dead_air_removed = compact_source_ranges(
@@ -410,6 +439,11 @@ async def build_plan(
                         "duration": part_duration,
                         "source_start": source_start,
                         "source_duration": part_duration,
+                        **(
+                            {"transform": reframe["transform"]}
+                            if reframe
+                            else {}
+                        ),
                         "metadata": {
                             "ai_plan": True,
                             "source_intelligence_id": candidate[
@@ -428,6 +462,15 @@ async def build_plan(
                             "visual_context": candidate.get(
                                 "visual_context"
                             ),
+                            "reframe": (
+                                {
+                                    key: value
+                                    for key, value in reframe.items()
+                                    if key != "transform"
+                                }
+                                if reframe
+                                else None
+                            ),
                         },
                     },
                     "reason": (
@@ -436,6 +479,12 @@ async def build_plan(
                         f"grounded evidence with score "
                         f"{candidate['final_score']:.3f}: "
                         f"{candidate['text'][:180]}"
+                        + (
+                            f" · subject-aware reframe: {reframe['strategy']} "
+                            f"({reframe['confidence']:.2f})"
+                            if reframe
+                            else ""
+                        )
                     ),
                 }
             )
