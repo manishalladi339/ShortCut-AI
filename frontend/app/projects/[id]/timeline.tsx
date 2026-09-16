@@ -682,6 +682,13 @@ function SelectionInspector({
           <MetaChip label="Semantic replacement" />
         ) : null}
         {metadata.pacing_retimed ? <MetaChip label="Retimed" /> : null}
+        {metadata.reframe ? (
+          <MetaChip
+            label={`Smart reframe · ${Math.round(
+              Number(metadata.reframe.confidence ?? 0) * 100,
+            )}%`}
+          />
+        ) : null}
         {metadata.qa_repaired ? <MetaChip label="QA repaired" /> : null}
         {metadata.ai_plan_id ? <MetaChip label="AI planned" /> : null}
       </View>

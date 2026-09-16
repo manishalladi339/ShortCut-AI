@@ -23,6 +23,7 @@ class HighlightCandidate(BaseModel):
     dead_air_removed_sec: float = Field(default=0.0, ge=0.0)
     planned_duration_sec: float | None = Field(default=None, ge=0.0)
     visual_context: dict[str, Any] | None = None
+    reframe_suggestion: dict[str, Any] | None = None
 
 
 class BrollRecommendation(BaseModel):
@@ -113,6 +114,7 @@ class CreateAIEditPlanRequest(BaseModel):
     rhythm_snap_window_sec: float = Field(default=0.35, ge=0.0, le=1.0)
     broll_fade: bool = True
     broll_fade_sec: float = Field(default=0.18, ge=0.05, le=1.0)
+    smart_reframe: bool = True
     music_asset_id: str | None = Field(default=None, max_length=120)
     music_source_start_sec: float = Field(default=0.0, ge=0.0, le=7200.0)
     music_volume: float = Field(default=0.12, ge=0.0, le=1.0)

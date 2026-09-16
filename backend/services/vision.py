@@ -24,6 +24,73 @@ def _data_url(path: Path) -> str:
     return f"data:image/jpeg;base64,{encoded}"
 
 
+def _normalized_box(value: object) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    try:
+        x = float(value.get("x"))
+        y = float(value.get("y"))
+        width = float(value.get("width"))
+        height = float(value.get("height"))
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    x = max(0.0, min(1.0, x))
+    y = max(0.0, min(1.0, y))
+    available_width = 1.0 - x
+    available_height = 1.0 - y
+    if available_width <= 0.0 or available_height <= 0.0:
+        return None
+    width = min(available_width, width)
+    height = min(available_height, height)
+    if width < 0.001 or height < 0.001:
+        return None
+    return {
+        "x": round(x, 6),
+        "y": round(y, 6),
+        "width": round(width, 6),
+        "height": round(height, 6),
+    }
+
+
+def _normalized_subjects(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict] = []
+    for index, item in enumerate(value[:8]):
+        if not isinstance(item, dict):
+            continue
+        box = _normalized_box(item.get("box"))
+        if not box:
+            continue
+        label = str(item.get("label") or f"person_{index + 1}").strip()[:80]
+        try:
+            prominence = max(0.0, min(1.0, float(item.get("prominence") or 0.0)))
+        except (TypeError, ValueError):
+            prominence = 0.0
+        raw_speaking = item.get("speaking_likelihood")
+        try:
+            speaking = (
+                max(0.0, min(1.0, float(raw_speaking)))
+                if raw_speaking is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            speaking = None
+        result.append(
+            {
+                "label": label or f"person_{index + 1}",
+                "box": box,
+                "prominence": round(prominence, 4),
+                "speaking_likelihood": (
+                    round(speaking, 4) if speaking is not None else None
+                ),
+            }
+        )
+    return result
+
+
 class OpenAIVisionProvider:
     async def analyze_frames(self, frames: list[dict]) -> list[dict]:
         if not frames:
@@ -38,8 +105,13 @@ class OpenAIVisionProvider:
                     "Analyze these representative video frames in order. Return JSON only "
                     "with a top-level 'frames' array. Each item must include: index, "
                     "description, shot_type, people_count, visible_objects (array), "
-                    "text_on_screen (string or null), and editing_notes (array). "
-                    "Describe only what is visibly supported; do not infer identity."
+                    "text_on_screen (string or null), editing_notes (array), and subjects "
+                    "(array). subjects should contain only clearly visible people. Each "
+                    "subject must have a frame-local label, box={x,y,width,height} using "
+                    "normalized 0..1 coordinates, prominence 0..1, and "
+                    "speaking_likelihood 0..1 or null. speaking_likelihood may use only "
+                    "visible mouth/posture cues in that frame. Do not infer names, identity, "
+                    "or link a person across frames."
                 ),
             }
         ]
@@ -119,6 +191,7 @@ class OpenAIVisionProvider:
                         for item in (row.get("editing_notes") or [])
                         if str(item).strip()
                     ],
+                    "subjects": _normalized_subjects(row.get("subjects")),
                     "provider": "openai-compatible",
                     "model": settings.VISION_MODEL,
                 }
@@ -139,6 +212,7 @@ class DisabledVisionProvider:
                 "visible_objects": [],
                 "text_on_screen": None,
                 "editing_notes": [],
+                "subjects": [],
                 "provider": "disabled",
                 "model": None,
             }

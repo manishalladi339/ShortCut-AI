@@ -3,7 +3,7 @@
 Integration application requires analyzed media, so these tests focus on request
 schema behavior while API integration remains covered by the shared state tests.
 """
-from models.ai_plan import ApplyAIEditPlanRequest
+from models.ai_plan import ApplyAIEditPlanRequest, CreateAIEditPlanRequest
 
 
 def test_apply_plan_defaults_to_non_destructive_behavior():
@@ -23,3 +23,9 @@ def test_apply_plan_accepts_reviewed_operation_ids():
         "primary-2",
         "caption-1",
     ]
+
+
+
+def test_ai_plan_smart_reframe_is_on_by_default_and_can_be_disabled():
+    assert CreateAIEditPlanRequest().smart_reframe is True
+    assert CreateAIEditPlanRequest(smart_reframe=False).smart_reframe is False

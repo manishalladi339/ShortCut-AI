@@ -48,6 +48,22 @@ class BeatGrid(BaseModel):
     source: str = "energy_onsets"
 
 
+class NormalizedBox(BaseModel):
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+    width: float = Field(gt=0.0, le=1.0)
+    height: float = Field(gt=0.0, le=1.0)
+
+
+class VisualSubject(BaseModel):
+    """Frame-local subject evidence. Labels never imply cross-frame identity."""
+
+    label: str = Field(min_length=1, max_length=80)
+    box: NormalizedBox
+    prominence: float = Field(default=0.0, ge=0.0, le=1.0)
+    speaking_likelihood: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
 class VisualObservation(BaseModel):
     index: int = Field(ge=0)
     time: float = Field(ge=0)
@@ -57,6 +73,7 @@ class VisualObservation(BaseModel):
     visible_objects: list[str] = Field(default_factory=list)
     text_on_screen: str | None = None
     editing_notes: list[str] = Field(default_factory=list)
+    subjects: list[VisualSubject] = Field(default_factory=list)
     provider: str | None = None
     model: str | None = None
 
