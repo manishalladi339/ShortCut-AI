@@ -35,6 +35,7 @@ class Settings:
     MEDIA_DERIVATIVE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_DERIVATIVE_TIMEOUT_SEC", "180"))
     RENDER_TIMEOUT_SEC: int = int(os.environ.get("RENDER_TIMEOUT_SEC", "900"))
     WORKER_POLL_INTERVAL_SEC: float = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0"))
+    JOB_LEASE_SECONDS: int = int(os.environ.get("JOB_LEASE_SECONDS", "1200"))
     MEDIA_INTELLIGENCE_TIMEOUT_SEC: int = int(
         os.environ.get("MEDIA_INTELLIGENCE_TIMEOUT_SEC", "900")
     )
