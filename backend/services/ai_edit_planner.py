@@ -25,6 +25,7 @@ from services.highlight_scoring import (
 from services.narrative_planning import structure_narrative
 from services.planner_evaluation import evaluate_plan
 from services.plan_review import assign_operation_ids
+from services.project_intelligence import build_and_store_project_intelligence
 from services.rhythm_editing import map_rhythm_to_timeline, snap_forward_to_rhythm
 from services.semantic_search import cosine_similarity
 from services.silence_editing import snap_outward_to_silence
@@ -33,6 +34,7 @@ from services.speaker_editing import (
     primary_speaker,
     speaker_allowed,
 )
+from services.story_director import build_story_beats
 from services.transition_planning import broll_fade_ticks, bounded_fade_ticks
 
 
@@ -98,7 +100,7 @@ async def build_plan(
     asset_ids = [record["asset_id"] for record in records]
     asset_docs = await db.assets.find(
         {"id": {"$in": asset_ids}, "user_id": user_id},
-        {"_id": 0, "id": 1, "duration_sec": 1, "kind": 1},
+        {"_id": 0, "id": 1, "filename": 1, "duration_sec": 1, "kind": 1},
     ).to_list(len(asset_ids))
     assets = {asset["id"]: asset for asset in asset_docs}
     records_by_id = {record["id"]: record for record in records}
@@ -107,6 +109,12 @@ async def build_plan(
         for record in records
         for candidate in build_visual_candidates(record)
     ]
+    project_intelligence = await build_and_store_project_intelligence(
+        project_id=project["id"],
+        user_id=user_id,
+        records=records,
+        assets=asset_docs,
+    )
 
     candidates: list[dict] = []
     for record in records:
@@ -212,6 +220,7 @@ async def build_plan(
         project=project,
         candidates=chosen,
         target_audience=body.target_audience,
+        project_intelligence=project_intelligence,
     )
     chosen_by_key = {_candidate_key(item): item for item in chosen}
     ordered: list[dict] = []
@@ -633,6 +642,12 @@ async def build_plan(
                 }
             )
 
+    story_beats = build_story_beats(
+        ordered_candidates=ordered,
+        project_intelligence=project_intelligence,
+        target_duration_sec=body.target_duration_sec,
+    )
+
     if music_asset:
         output_duration = timeline_cursor
         music_source_start = round(
@@ -729,6 +744,10 @@ async def build_plan(
         "candidates": ordered,
         "operations": operations,
         "broll_recommendations": broll_recommendations,
+        "project_intelligence_id": project_intelligence.get("id"),
+        "project_intelligence_summary": project_intelligence.get("summary") or "",
+        "project_topics": project_intelligence.get("topic_clusters") or [],
+        "story_beats": story_beats,
         "audience_profile": narrative.get("audience_profile") or {},
         "narrative_summary": str(
             narrative.get("narrative_summary") or ""
