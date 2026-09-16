@@ -624,6 +624,8 @@ def build_constrained_proposal(
     instruction: str,
     scope_start_sec: float | None = None,
     scope_end_sec: float | None = None,
+    additional_intents: list[str] | None = None,
+    additional_operations: list[dict] | None = None,
 ) -> dict:
     sequence = _active_sequence(state)
     tps = _ticks_per_second(sequence)
@@ -653,11 +655,14 @@ def build_constrained_proposal(
         intents.extend(next_intents)
         operations.extend(next_operations)
 
+    intents.extend(additional_intents or [])
+    operations.extend(additional_operations or [])
+
     if not intents:
         raise ValueError(
             "Create With Me currently supports diarized speaker removal with "
-            "sequence-wide ripple, caption restyling/removal, AI B-roll removal, "
-            "and music volume/removal."
+            "sequence-wide ripple, semantic B-roll replacement/removal, caption "
+            "restyling/removal, and music volume/removal."
         )
     if not operations:
         raise ValueError(
@@ -734,6 +739,60 @@ def apply_constrained_operations(
             if component != "story":
                 raise ValueError("Speaker-removal operation has invalid component")
             _apply_speaker_ripple(sequence, payload)
+            continue
+
+        if op == "replace_broll":
+            if component != "broll":
+                raise ValueError("B-roll replacement has invalid component")
+            track = next(
+                (
+                    item
+                    for item in sequence.get("tracks") or []
+                    if item.get("id") == payload.get("track_id")
+                ),
+                None,
+            )
+            if not track or track.get("kind") != "overlay" or track.get("locked"):
+                raise ValueError("B-roll replacement target track is unavailable or locked")
+            clip_id = str(payload.get("clip_id") or "")
+            clip = next(
+                (
+                    item
+                    for item in track.get("clips") or []
+                    if item.get("id") == clip_id
+                ),
+                None,
+            )
+            if not clip:
+                raise ValueError("B-roll replacement target no longer exists")
+            metadata = clip.get("metadata") or {}
+            if not (metadata.get("broll") or metadata.get("ai_plan_id")):
+                raise ValueError("Proposal cannot replace a non-AI overlay")
+
+            replacement_asset_id = str(payload.get("asset_id") or "")
+            source_start = int(payload.get("source_start") or 0)
+            source_duration = int(payload.get("source_duration") or 0)
+            if not replacement_asset_id or source_start < 0 or source_duration <= 0:
+                raise ValueError("B-roll replacement source range is invalid")
+            if source_duration != int(clip.get("duration") or 0):
+                raise ValueError(
+                    "B-roll replacement must preserve the exact timeline-slot duration"
+                )
+
+            old_asset_id = clip.get("asset_id")
+            clip["asset_id"] = replacement_asset_id
+            clip["source_start"] = source_start
+            clip["source_duration"] = source_duration
+            clip["metadata"] = {
+                **metadata,
+                "broll": True,
+                "semantic_replacement": True,
+                "replacement_from_asset_id": old_asset_id,
+                "source_intelligence_id": payload.get("source_intelligence_id"),
+                "source_observation_index": payload.get("source_observation_index"),
+                "broll_relevance_score": payload.get("relevance_score"),
+                "replacement_query": payload.get("replacement_query"),
+            }
             continue
 
         if op in {"update_caption", "remove_caption"}:
