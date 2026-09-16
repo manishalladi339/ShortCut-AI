@@ -27,6 +27,16 @@ export interface ProposedEditOperation {
   reason: string;
 }
 
+export interface StoryBeat {
+  id: string;
+  role: string;
+  title: string;
+  purpose: string;
+  target_duration_sec: number;
+  evidence_keys: string[];
+  topic_ids: string[];
+}
+
 export interface AIEditPlan {
   id: string;
   project_id: string;
@@ -38,6 +48,10 @@ export interface AIEditPlan {
   candidates: HighlightCandidate[];
   operations: ProposedEditOperation[];
   broll_recommendations: Array<Record<string, any>>;
+  project_intelligence_id: string | null;
+  project_intelligence_summary: string;
+  project_topics: Array<Record<string, any>>;
+  story_beats: StoryBeat[];
   audience_profile: Record<string, any>;
   narrative_summary: string;
   caption_suggestion: string;
