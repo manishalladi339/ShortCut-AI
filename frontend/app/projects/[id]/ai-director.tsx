@@ -46,6 +46,7 @@ export default function AIDirectorScreen() {
 
   const [objective, setObjective] = useState("");
   const [targetDuration, setTargetDuration] = useState("45");
+  const [multiAssetMode, setMultiAssetMode] = useState(false);
   const [includeCaptions, setIncludeCaptions] = useState(true);
   const [removeDeadAir, setRemoveDeadAir] = useState(true);
   const [rhythmBroll, setRhythmBroll] = useState(true);
@@ -110,10 +111,25 @@ export default function AIDirectorScreen() {
     [assets],
   );
 
+  const imageAssets = useMemo(
+    () =>
+      assets.filter(
+        (asset) =>
+          asset.kind === "image" &&
+          asset.processing_status === "ready",
+      ),
+    [assets],
+  );
+
+  const analysisAssets = useMemo(
+    () => [...mediaAssets, ...imageAssets],
+    [mediaAssets, imageAssets],
+  );
+
   const pendingAssets = useMemo(
     () =>
       assets
-        .filter((asset) => asset.kind === "video")
+        .filter((asset) => asset.kind === "video" || asset.kind === "image")
         .filter((asset) => asset.processing_status !== "ready"),
     [assets],
   );
@@ -149,9 +165,9 @@ export default function AIDirectorScreen() {
     setPhase("analyzing");
     let completed = 0;
 
-    for (const asset of mediaAssets) {
+    for (const asset of analysisAssets) {
       setStatusText(
-        `Checking ${asset.filename} · ${completed}/${mediaAssets.length} ready`,
+        `Checking ${asset.filename} · ${completed}/${analysisAssets.length} ready`,
       );
 
       let alreadyComplete = false;
@@ -169,7 +185,7 @@ export default function AIDirectorScreen() {
 
       completed += 1;
       setStatusText(
-        `Media intelligence ready · ${completed}/${mediaAssets.length}`,
+        `Media intelligence ready · ${completed}/${analysisAssets.length}`,
       );
     }
   }
@@ -182,11 +198,19 @@ export default function AIDirectorScreen() {
       setStatusText("Building a grounded story and edit plan…");
 
       const duration = Number(targetDuration);
+      const maxDuration = multiAssetMode ? 900 : 300;
+      const resolvedDuration = Number.isFinite(duration)
+        ? Math.max(5, Math.min(maxDuration, duration))
+        : 45;
       const nextPlan = await aiPlansApi.create(project.id, {
         objective: objective.trim() || undefined,
-        target_duration_sec: Number.isFinite(duration)
-          ? Math.max(5, Math.min(300, duration))
-          : 45,
+        director_mode: multiAssetMode ? "multi_asset" : "standard",
+        target_duration_sec: resolvedDuration,
+        max_clips: multiAssetMode
+          ? Math.min(80, Math.max(12, Math.ceil(resolvedDuration / 7)))
+          : 8,
+        min_source_assets: 3,
+        max_source_share: 0.55,
         include_captions: includeCaptions,
         remove_dead_air: removeDeadAir,
         rhythm_snap_broll: rhythmBroll,
@@ -391,6 +415,22 @@ export default function AIDirectorScreen() {
           />
 
           <ToggleRow
+            label="Multi-Asset Director Mode"
+            value={multiAssetMode}
+            onValueChange={setMultiAssetMode}
+          />
+          <Text
+            style={[
+              typography.caption,
+              { color: colors.textLow, marginTop: spacing.xs },
+            ]}
+          >
+            Balances story moments across multiple spoken sources and uses analyzed
+            videos/images as grounded visual support. Long-form plans can target up to
+            900 seconds.
+          </Text>
+
+          <ToggleRow
             label="Grounded captions"
             value={includeCaptions}
             onValueChange={setIncludeCaptions}
@@ -428,6 +468,12 @@ export default function AIDirectorScreen() {
             label="Ready video"
             value={String(mediaAssets.length)}
             ok={mediaAssets.length > 0}
+          />
+          <MetricRow
+            icon="image-outline"
+            label="Ready images"
+            value={String(imageAssets.length)}
+            ok={true}
           />
           <MetricRow
             icon="hourglass-outline"
@@ -484,6 +530,53 @@ export default function AIDirectorScreen() {
                 />
               </View>
             </View>
+
+            {plan.director_mode === "multi_asset" && plan.director_brief?.summary ? (
+              <>
+                <SectionTitle title="Director source mix" />
+                <View style={styles.card}>
+                  <View style={styles.row}>
+                    <Ionicons name="albums-outline" color={colors.aiAccent} size={20} />
+                    <Text style={[typography.bodyMed, { color: colors.textHigh, flex: 1 }]}>
+                      Multi-Asset Director
+                    </Text>
+                  </View>
+                  <Text style={[typography.body, { color: colors.textMedium, marginTop: spacing.sm }]}>
+                    {String(plan.director_brief.summary)}
+                  </Text>
+                  <View style={styles.metricGrid}>
+                    <MiniMetric
+                      label="Spoken sources"
+                      value={String(plan.director_brief.selected_spoken_asset_count ?? 0)}
+                    />
+                    <MiniMetric
+                      label="Topics covered"
+                      value={String(plan.director_brief.topic_coverage_count ?? 0)}
+                    />
+                    <MiniMetric
+                      label="Visual sources"
+                      value={String((plan.director_brief.visual_support_asset_ids ?? []).length)}
+                    />
+                  </View>
+                  {plan.source_mix.map((source, index) => (
+                    <View key={String(source.asset_id ?? index)} style={styles.sourceMixRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[typography.bodyMed, { color: colors.textHigh }]} numberOfLines={1}>
+                          {String(source.filename ?? source.asset_id ?? `Source ${index + 1}`)}
+                        </Text>
+                        <Text style={[typography.caption, { color: colors.textMedium, marginTop: 2 }]}>
+                          {Number(source.selected_duration_sec ?? 0).toFixed(1)}s ·{" "}
+                          {String(source.selected_clip_count ?? 0)} clip
+                          {Number(source.selected_clip_count ?? 0) === 1 ? "" : "s"} ·{" "}
+                          {String(source.source_local_speaker_count ?? 0)} source-local speaker
+                          {Number(source.source_local_speaker_count ?? 0) === 1 ? "" : "s"}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
 
             {plan.creator_memory_summary ? (
               <>
@@ -1162,6 +1255,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface2,
     padding: spacing.md,
     borderRadius: radius.md,
+  },
+  sourceMixRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
   },
   storyCard: {
     backgroundColor: colors.surface1,
