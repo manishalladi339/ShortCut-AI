@@ -27,6 +27,9 @@ class Settings:
 
     MONGO_URL: str = os.environ["MONGO_URL"]
     DB_NAME: str = os.environ["DB_NAME"]
+    MONGO_SERVER_SELECTION_TIMEOUT_MS: int = int(
+        os.environ.get("MONGO_SERVER_SELECTION_TIMEOUT_MS", "5000")
+    )
 
     JWT_SECRET: str = os.environ["JWT_SECRET"]
     JWT_ALG: str = os.environ.get("JWT_ALG", "HS256")
