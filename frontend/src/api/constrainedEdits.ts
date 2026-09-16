@@ -11,7 +11,8 @@ export interface ConstrainedEditOperation {
     | "update_caption"
     | "remove_caption"
     | "remove_speaker_ripple"
-    | "replace_broll";
+    | "replace_broll"
+    | "retime_scope";
   component: ConstrainedComponent;
   payload: Record<string, any>;
   reason: string;
