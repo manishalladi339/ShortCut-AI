@@ -40,7 +40,22 @@ def test_evaluation_tracks_grounding_and_roles():
                 "operation": "add_clip",
                 "payload": {
                     "asset_id": "a",
-                    "metadata": {"source_unit_index": 1},
+                    "transform": {
+                        "scale": 3.2,
+                        "position_x": -420.0,
+                        "position_y": 0.0,
+                        "rotation_deg": 0.0,
+                        "opacity": 1.0,
+                    },
+                    "metadata": {
+                        "source_unit_index": 1,
+                        "reframe": {
+                            "strategy": "single_visible_subject",
+                            "confidence": 0.82,
+                            "observation_index": 3,
+                            "identity_claimed": False,
+                        },
+                    },
                 },
             },
             {
@@ -61,3 +76,47 @@ def test_evaluation_tracks_grounding_and_roles():
     assert result["story_beat_count"] == 2
     assert result["story_beats_grounded"] is True
     assert result["project_topic_count"] == 1
+    assert result["smart_reframed_clip_count"] == 1
+    assert result["transforms_valid"] is True
+
+
+
+def test_evaluation_rejects_untraceable_reframe_metadata():
+    plan = {
+        "candidates": [
+            {
+                "asset_id": "a",
+                "unit_index": 1,
+                "start": 0.0,
+                "end": 5.0,
+                "final_score": 0.8,
+            }
+        ],
+        "operations": [
+            {
+                "operation": "add_clip",
+                "payload": {
+                    "asset_id": "a",
+                    "transform": {
+                        "scale": 3.0,
+                        "position_x": 0.0,
+                        "position_y": 0.0,
+                        "rotation_deg": 0.0,
+                        "opacity": 1.0,
+                    },
+                    "metadata": {
+                        "source_unit_index": 1,
+                        "reframe": {
+                            "strategy": "visible_speaking_cue",
+                            "confidence": 0.9,
+                            "observation_index": None,
+                            "identity_claimed": True,
+                        },
+                    },
+                },
+            }
+        ],
+    }
+    result = evaluate_plan(plan)
+    assert result["all_operations_grounded"] is False
+    assert result["smart_reframed_clip_count"] == 1
