@@ -11,6 +11,7 @@ from core.config import settings
 from core.security import utc_now
 from db.mongo import get_db
 from models.job import JobStatus, JobType
+from services.job_policy import recovery_status
 
 
 def _lease_seconds(value: int | None = None) -> int:
@@ -36,15 +37,6 @@ def _running_owner_query(
         if require_unexpired:
             query["lease_expires_at"] = {"$gt": utc_now()}
     return query
-
-
-def recovery_status(job: dict) -> str:
-    """Pure helper used by recovery/tests to decide retry vs terminal failure."""
-    return (
-        JobStatus.queued.value
-        if int(job.get("attempt") or 0) < int(job.get("max_attempts") or 1)
-        else JobStatus.failed.value
-    )
 
 
 async def enqueue(
