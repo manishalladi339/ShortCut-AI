@@ -42,13 +42,13 @@ class AudioDucking(BaseModel):
 
 
 class TransformKeyframe(BaseModel):
-    """Relative transform keyframe inside a clip's rendered duration."""
+    """Transform keyframe at normalized clip progress from 0.0 to 1.0."""
 
-    at: int = Field(ge=0)
+    at: float = Field(ge=0.0, le=1.0)
     scale: float = Field(gt=0.01, le=10.0)
     position_x: float = 0.0
     position_y: float = 0.0
-    easing: Literal["linear", "ease_in_out"] = "ease_in_out"
+    easing: Literal["linear", "ease_in", "ease_out", "ease_in_out"] = "ease_in_out"
 
 
 class ClipTransform(BaseModel):
@@ -63,11 +63,15 @@ class ClipTransform(BaseModel):
     def keyframes_are_ordered(self) -> "ClipTransform":
         if not self.keyframes:
             return self
-        if self.keyframes[0].at != 0:
-            raise ValueError("transform keyframes must begin at clip-relative tick 0")
+        if len(self.keyframes) < 2:
+            raise ValueError("transform motion requires at least two keyframes")
+        if abs(self.keyframes[0].at) > 1e-9:
+            raise ValueError("transform keyframes must begin at progress 0")
+        if abs(self.keyframes[-1].at - 1.0) > 1e-9:
+            raise ValueError("transform keyframes must end at progress 1")
         times = [item.at for item in self.keyframes]
         if times != sorted(times) or len(times) != len(set(times)):
-            raise ValueError("transform keyframe times must be strictly increasing")
+            raise ValueError("transform keyframe progress values must be strictly increasing")
         return self
 
 
@@ -100,8 +104,6 @@ class Clip(BaseModel):
         for transition in (self.transition_in, self.transition_out):
             if transition and transition.duration > self.duration:
                 raise ValueError("transition duration cannot exceed clip duration")
-        if self.transform.keyframes and self.transform.keyframes[-1].at > self.duration:
-            raise ValueError("transform keyframe cannot extend beyond clip duration")
         return self
 
 
