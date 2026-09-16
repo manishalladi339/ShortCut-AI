@@ -15,6 +15,18 @@ def _valid_production(monkeypatch):
     monkeypatch.setattr(settings, "VISION_PROVIDER", "openai")
     monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "openai")
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-production-key")
+    monkeypatch.setattr(settings, "PASSWORD_RESET_EMAIL_PROVIDER", "resend")
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "test-resend-key")
+    monkeypatch.setattr(
+        settings,
+        "PASSWORD_RESET_FROM_EMAIL",
+        "ShortCut AI <security@shortcut.example>",
+    )
+    monkeypatch.setattr(
+        settings,
+        "PASSWORD_RESET_URL_TEMPLATE",
+        "https://app.shortcut.example/reset-password?token={token}",
+    )
 
 
 def test_valid_production_configuration_passes(monkeypatch):
@@ -54,4 +66,23 @@ def test_production_requires_ai_key_when_openai_enabled(monkeypatch):
     _valid_production(monkeypatch)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        settings.validate_runtime()
+
+
+
+def test_production_requires_reset_email_provider(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(settings, "PASSWORD_RESET_EMAIL_PROVIDER", "disabled")
+    with pytest.raises(RuntimeError, match="PASSWORD_RESET_EMAIL_PROVIDER"):
+        settings.validate_runtime()
+
+
+def test_production_reset_url_template_must_contain_token(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(
+        settings,
+        "PASSWORD_RESET_URL_TEMPLATE",
+        "https://app.shortcut.example/reset-password",
+    )
+    with pytest.raises(RuntimeError, match=r"\{token\}"):
         settings.validate_runtime()
