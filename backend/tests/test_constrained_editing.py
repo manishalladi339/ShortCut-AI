@@ -397,3 +397,96 @@ def test_scoped_speaker_removal_only_selects_fully_contained_primary_clips():
         assert "no matching timeline items" in str(exc)
     else:
         raise AssertionError("speaker outside the scope should not be removed")
+
+
+
+def test_replace_broll_preserves_exact_timeline_slot():
+    state = _state()
+    operation = {
+        "id": "replace-1",
+        "operation": "replace_broll",
+        "component": "broll",
+        "payload": {
+            "sequence_id": "seq",
+            "track_id": "overlay",
+            "clip_id": "broll-1",
+            "asset_id": "replacement-video",
+            "source_start": 4000,
+            "source_duration": 3000,
+            "source_intelligence_id": "intel-replacement",
+            "source_observation_index": 2,
+            "relevance_score": 0.91,
+            "replacement_query": "factory footage",
+        },
+        "reason": "Grounded semantic replacement",
+    }
+
+    changed = apply_constrained_operations(state=state, operations=[operation])
+    overlay = next(
+        track for track in changed["sequences"][0]["tracks"] if track["id"] == "overlay"
+    )
+    replaced = next(clip for clip in overlay["clips"] if clip["id"] == "broll-1")
+    assert replaced["timeline_start"] == 2000
+    assert replaced["duration"] == 3000
+    assert replaced["asset_id"] == "replacement-video"
+    assert replaced["source_start"] == 4000
+    assert replaced["source_duration"] == 3000
+    assert replaced["metadata"]["semantic_replacement"] is True
+    assert replaced["metadata"]["replacement_from_asset_id"] == "b"
+    assert replaced["metadata"]["source_intelligence_id"] == "intel-replacement"
+    untouched = next(clip for clip in overlay["clips"] if clip["id"] == "broll-2")
+    assert untouched["asset_id"] == "b"
+    assert untouched["timeline_start"] == 15000
+
+
+def test_replace_broll_refuses_timeline_duration_change():
+    state = _state()
+    operation = {
+        "id": "replace-1",
+        "operation": "replace_broll",
+        "component": "broll",
+        "payload": {
+            "sequence_id": "seq",
+            "track_id": "overlay",
+            "clip_id": "broll-1",
+            "asset_id": "replacement-video",
+            "source_start": 0,
+            "source_duration": 2500,
+        },
+        "reason": "Invalid duration",
+    }
+    try:
+        apply_constrained_operations(state=state, operations=[operation])
+    except ValueError as exc:
+        assert "exact timeline-slot duration" in str(exc)
+    else:
+        raise AssertionError("B-roll replacement must preserve target duration")
+
+
+def test_additional_semantic_operation_builds_reviewable_proposal():
+    state = _state()
+    extra = {
+        "id": "semantic-1",
+        "operation": "replace_broll",
+        "component": "broll",
+        "payload": {
+            "sequence_id": "seq",
+            "track_id": "overlay",
+            "clip_id": "broll-1",
+            "asset_id": "replacement-video",
+            "source_start": 0,
+            "source_duration": 3000,
+        },
+        "reason": "Semantic alternative",
+    }
+    proposal = build_constrained_proposal(
+        project_id="project-1",
+        user_id="user-1",
+        state=state,
+        instruction="Replace B-roll in the intro",
+        additional_intents=["replace_broll"],
+        additional_operations=[extra],
+    )
+    assert proposal["interpreted_intents"] == ["replace_broll"]
+    assert proposal["operations"] == [extra]
+    assert "primary story clips" in proposal["preserve_rules"][-1]
