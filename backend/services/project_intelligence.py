@@ -11,7 +11,6 @@ from collections import Counter, defaultdict
 from typing import Iterable
 
 from core.security import utc_now
-from db.mongo import get_db
 from services.semantic_search import cosine_similarity
 
 _STOPWORDS = {
@@ -75,7 +74,13 @@ def latest_records_per_asset(records: list[dict]) -> list[dict]:
         if not asset_id:
             continue
         current = latest.get(asset_id)
-        if current is None or _freshness(record) >= _freshness(current):
+        candidate_key = (_freshness(record), str(record.get("id") or ""))
+        current_key = (
+            (_freshness(current), str(current.get("id") or ""))
+            if current is not None
+            else None
+        )
+        if current_key is None or candidate_key >= current_key:
             latest[asset_id] = record
     return [latest[key] for key in sorted(latest)]
 
@@ -320,6 +325,9 @@ async def build_and_store_project_intelligence(
     records: list[dict],
     assets: list[dict],
 ) -> dict:
+    # Keep deterministic synthesis importable/testable without the Mongo driver.
+    from db.mongo import get_db
+
     db = get_db()
     doc = synthesize_project_intelligence(
         project_id=project_id,
