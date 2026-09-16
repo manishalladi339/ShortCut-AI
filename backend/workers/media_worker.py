@@ -13,6 +13,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from core.config import settings
 from core.security import utc_now
 from db.mongo import close as close_mongo
 from db.mongo import get_db
