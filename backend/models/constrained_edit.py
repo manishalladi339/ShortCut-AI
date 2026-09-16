@@ -30,8 +30,9 @@ class ConstrainedEditOperation(BaseModel):
         "set_clip_properties",
         "update_caption",
         "remove_caption",
+        "remove_speaker_ripple",
     ]
-    component: Literal["broll", "music", "captions"]
+    component: Literal["story", "broll", "music", "captions"]
     payload: dict[str, Any]
     reason: str
 
