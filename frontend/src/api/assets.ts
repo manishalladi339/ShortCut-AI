@@ -14,11 +14,15 @@ export interface Asset {
   duration_sec: number | null;
   width: number | null;
   height: number | null;
+  media_metadata: Record<string, any>;
+  derivatives: Record<string, any>;
   storage_type: string;
-  s3_bucket: string;
-  s3_key: string;
-  s3_url: string | null;
+  storage_bucket: string;
+  storage_key: string;
+  download_url: string | null;
   upload_status: UploadStatus;
+  processing_status: string;
+  processing_job_id: string | null;
   is_watermarked: boolean;
   language: string | null;
   tags: string[];
@@ -30,7 +34,7 @@ export interface PresignResp {
   asset_id: string;
   upload_url: string;
   upload_headers: Record<string, string>;
-  s3_key: string;
+  storage_key: string;
   expires_at: string;
 }
 
@@ -49,10 +53,8 @@ export const assetsApi = {
     project_id?: string;
     tags?: string[];
   }) => api<PresignResp>("/assets/presign-upload", { method: "POST", body }),
-  confirm: (
-    id: string,
-    body: { duration_sec?: number; width?: number; height?: number } = {},
-  ) => api<Asset>(`/assets/${id}/confirm`, { method: "POST", body }),
+  confirm: (id: string) =>
+    api<Asset>(`/assets/${id}/confirm`, { method: "POST", body: {} }),
   list: (opts: { kind?: AssetKind; project_id?: string; q?: string; tag?: string } = {}) => {
     const qs = new URLSearchParams();
     if (opts.kind) qs.set("kind", opts.kind);
@@ -77,7 +79,6 @@ export async function uploadBinary(
   const r = await fetch(upload_url, {
     method: "PUT",
     headers,
-    // Cast: fetch supports all three runtime types.
     body: data as BodyInit,
   });
   return r.ok;
