@@ -278,7 +278,6 @@ async def process_one() -> bool:
 
 
 async def run_forever() -> None:
-    from core.config import settings
     while True:
         if not await process_one():
             await asyncio.sleep(settings.WORKER_POLL_INTERVAL_SEC)
