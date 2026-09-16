@@ -667,6 +667,24 @@ def build_constrained_proposal(
             "replacement/removal, caption restyling/removal, and music "
             "volume/removal."
         )
+
+    structural = [
+        operation
+        for operation in operations
+        if operation.get("operation") in {"retime_scope", "remove_speaker_ripple"}
+    ]
+    if structural and len(operations) > len(structural):
+        raise ValueError(
+            "Structural story edits must be reviewed separately from caption, "
+            "B-roll, or music changes. Apply the story change first, then build "
+            "a second constrained edit proposal."
+        )
+    if len(structural) > 1:
+        raise ValueError(
+            "Only one structural story edit can be reviewed in a constrained "
+            "proposal at a time."
+        )
+
     if not operations:
         raise ValueError(
             "The instruction was understood, but there are no matching timeline "
