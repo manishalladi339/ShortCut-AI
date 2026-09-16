@@ -18,7 +18,7 @@ Supported operations now include:
 
 - diarized speaker removal with sequence-wide ripple;
 - transcript captions: remove or restyle;
-- AI B-roll overlays: remove;
+- AI B-roll overlays: semantically replace or remove;
 - music beds: remove, mute, lower or raise volume.
 
 Unsupported instructions return an error and leave the timeline untouched.
@@ -53,6 +53,32 @@ include:
 
 This is intentionally more conservative than blindly ripple-deleting one track.
 
+## Semantic B-roll replacement
+
+A command such as `Replace B-roll in the intro with factory footage` keeps the
+existing overlay's timeline start, duration, transitions and stacking behavior.
+
+ShortCut searches visual observations from analyzed project media and proposes an
+alternative source with:
+
+- the source asset ID;
+- the exact visual-observation index and timestamp;
+- the semantic similarity used for retrieval;
+- a source range long enough to preserve the current overlay duration.
+
+When the user supplies an explicit visual request (for example, “with factory
+footage”), that phrase becomes the retrieval query. Otherwise ShortCut uses the
+semantic context of the primary story clip underneath the B-roll slot. If that
+context is unavailable, it can fall back to the previous visual description.
+
+The current B-roll asset is excluded from replacement candidates. Replacement
+assets are revalidated as ready video sources again at apply time, and the source
+range is rechecked against the media duration. If those checks fail, ProjectState
+remains unchanged.
+
+This gives “replace only this B-roll” a stable meaning: change the visual source,
+not the story, timing, captions, music or surrounding edit.
+
 ## Scope invariant
 
 For localized operations, a target cue or clip is mutated only when the entire
@@ -77,6 +103,5 @@ resulting version after apply.
 The same constrained-operation model will expand to:
 
 - scoped pacing/speed changes such as “make the first 10 seconds faster”;
-- semantic B-roll replacement using Project Intelligence retrieval;
 - QA-driven approved fixes;
 - more complex story restructuring with explicit preservation constraints.
