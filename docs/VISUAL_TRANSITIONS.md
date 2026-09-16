@@ -1,8 +1,9 @@
 # Visual Transitions
 
-ShortCut supports deterministic clip entrance/exit transitions in canonical ProjectState.
+ShortCut stores clip entrance/exit transitions in canonical ProjectState. They are
+versioned, reviewable, restorable and rendered deterministically.
 
-## Supported kinds
+## Supported visual transitions
 
 - `fade`
 - `slide_left`
@@ -10,41 +11,54 @@ ShortCut supports deterministic clip entrance/exit transitions in canonical Proj
 - `slide_up`
 - `slide_down`
 
-These are clip-local entrance/exit treatments. They do not invent source handles or
-silently overlap adjacent clips.
+These are clip-local entrance/exit treatments. They do not silently overlap
+adjacent story clips or invent source media.
 
-## Why no fake cross-dissolve
+## Why there is no fake cross-dissolve yet
 
-A true cross-dissolve between two butt-cut story clips needs overlapping source
-media from both sides of the edit. If ShortCut does not have validated source handles,
-pretending to dissolve would either shorten the story, repeat frames or pull media
-outside the approved source range.
+A true cross-dissolve between two butt-cut story clips requires validated source
+handles on both sides of the edit.
 
-The production-beta renderer therefore uses deterministic fades/slides until an
-explicit source-handle model is added.
+Without those handles, an apparent dissolve would have to do at least one unsafe
+thing:
+
+- shorten the story;
+- repeat/freeze frames;
+- pull media outside an approved source range; or
+- silently overlap content that was never approved.
+
+ShortCut therefore ships deterministic fades/slides first. A real cross-dissolve
+should be added only after source-handle availability is represented explicitly
+in ProjectState.
 
 ## Rendering
 
-Fade transitions use alpha fade on the visual clip.
+Fade transitions use alpha fades on the visual clip.
 
-Directional slides are evaluated per frame in the compositor:
+Directional slide transitions are evaluated per frame by the compositor:
 
 - slide-left entrance: off-canvas left -> configured clip position
 - slide-right entrance: off-canvas right -> configured clip position
-- slide-up entrance: below canvas -> configured position
-- slide-down entrance: above canvas -> configured position
+- slide-up entrance: below canvas -> configured clip position
+- slide-down entrance: above canvas -> configured clip position
 
-Exit transitions reverse the direction toward the appropriate canvas edge.
+Exit transitions move toward the corresponding canvas edge.
 
-Motion keyframes remain active underneath transitions; the transition expression wraps
-the current transform position rather than replacing it.
+Transform motion keyframes continue underneath the transition. A slide wraps the
+current transform position instead of replacing the zoom/pan curve.
 
 ## Audio behavior
 
-Visual slide transitions do not alter dialogue/audio carried by a video clip.
+Visual slide transitions do **not** fade dialogue or other audio carried by a
+video/overlay clip.
 
-Standalone audio tracks support fade transitions only. This prevents a visual
-transition enum from being silently interpreted as an audio effect.
+For audio processing:
+
+- `fade` can create an audio fade;
+- a visual slide on video/overlay contributes zero audio fade duration;
+- a standalone audio clip with a slide transition is rejected explicitly.
+
+This prevents visual transition semantics from leaking into the audio mix.
 
 ## Create With Me
 
@@ -56,35 +70,80 @@ Examples:
 - `Fade the B-roll out`
 - `Remove the transition from this shot`
 
-Default duration is 0.25 seconds.
+Default duration: **0.25 seconds**.
 
-Language modifiers:
+Modifiers:
+
 - quick / fast / snappy -> 0.18 seconds
 - slow / smooth / gentle -> 0.40 seconds
 
-Transition duration is capped to half of the target clip duration.
+The chosen duration is capped to half of the target clip duration.
+
+A slide request must include a direction. If the direction is ambiguous,
+ShortCut refuses the edit rather than guessing.
 
 ## Scope and safety
 
-A transition can be applied only when the whole target clip is inside the approved
-scope.
+A transition can be proposed only when the complete target clip is inside the
+approved scope.
 
-Story transition operations may mutate primary video clips.
+Primary story transitions target video clips.
 
-B-roll transition operations are limited to AI/plan-authored overlays. User-authored
-overlays are not silently modified.
+B-roll transitions target overlay clips only when the overlay is AI/plan-authored.
+User-authored overlays are preserved.
 
 Transition edits preserve:
-- timeline start
-- duration
-- source start/duration
-- clip order
-- captions
-- unrelated B-roll/audio
 
-All changes remain reviewable and ProjectState-version fenced.
+- timeline start;
+- clip duration;
+- source start and source duration;
+- clip order;
+- transform motion keyframes;
+- captions;
+- unrelated audio/B-roll.
+
+All changes remain ProjectState-version fenced and reviewable before apply.
+
+## Caption disambiguation
+
+Commands such as:
+
+- `Fade the captions in`
+- `Slide the captions up`
+
+remain caption-animation requests. The visual transition planner exits early when
+the instruction explicitly targets captions/subtitles.
 
 ## Timeline review
 
-The timeline inspector shows entrance and exit transition kinds and exposes quick
-actions for story slide-in/fade-out and B-roll fade-out.
+The timeline inspector surfaces:
+
+- entrance transition kind;
+- exit transition kind;
+- existing motion keyframe count.
+
+Quick actions include:
+
+- Slide in;
+- Fade out;
+- Fade B-roll out.
+
+Each action opens Create With Me with the selected clip's exact time range.
+
+## Tests
+
+The transition milestone covers:
+
+- story slide planning/apply;
+- story fade-out;
+- AI-only B-roll targeting;
+- caption-fade disambiguation;
+- removal while preserving geometry;
+- duration capping;
+- direction refusal;
+- scope containment;
+- user-authored overlay protection;
+- slide position expressions;
+- video-audio isolation;
+- standalone audio slide rejection;
+- generated-media FFmpeg slide/fade rendering.
