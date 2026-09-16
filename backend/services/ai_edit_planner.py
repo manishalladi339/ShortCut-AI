@@ -25,7 +25,10 @@ from services.highlight_scoring import (
 from services.narrative_planning import structure_narrative
 from services.planner_evaluation import evaluate_plan
 from services.plan_review import assign_operation_ids
-from services.project_intelligence import build_and_store_project_intelligence
+from services.project_intelligence import (
+    build_and_store_project_intelligence,
+    latest_records_per_asset,
+)
 from services.rhythm_editing import map_rhythm_to_timeline, snap_forward_to_rhythm
 from services.semantic_search import cosine_similarity
 from services.silence_editing import snap_outward_to_silence
@@ -75,6 +78,7 @@ async def build_plan(
         },
         {"_id": 0},
     ).to_list(500)
+    records = latest_records_per_asset(records)
     if not records:
         raise HTTPException(
             status_code=409,
