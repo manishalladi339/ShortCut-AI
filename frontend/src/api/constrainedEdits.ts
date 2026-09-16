@@ -14,8 +14,7 @@ export interface ConstrainedEditOperation {
     | "replace_broll"
     | "retime_scope"
     | "repair_caption"
-    | "set_motion_keyframes"
-    | "set_clip_transition";
+    | "set_motion_keyframes";
   component: ConstrainedComponent;
   payload: Record<string, any>;
   reason: string;
