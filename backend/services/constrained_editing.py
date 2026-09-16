@@ -429,44 +429,85 @@ def _motion_operations(
 ) -> tuple[list[str], list[dict]]:
     """Plan appearance-only motion without changing clip timing or source ranges."""
     lowered = instruction.lower()
+    motion_terms = (
+        "zoom",
+        "push in",
+        "push-in",
+        "pull out",
+        "pull-out",
+        "pan left",
+        "pan right",
+        "pan up",
+        "pan down",
+        "ken burns",
+        "motion",
+    )
+    if not any(term in lowered for term in motion_terms):
+        return [], []
 
     remove_motion = bool(
         re.search(
             r"\b(?:remove|disable|clear|turn\s+off)\s+(?:the\s+)?"
-            r"(?:motion|push[- ]?in|zoom)\b",
+            r"(?:motion|push[- ]?in|zoom|pan)\b",
             lowered,
         )
-        or re.search(r"\b(?:make|keep)\s+(?:this\s+|the\s+)?(?:shot|clip)\s+static\b", lowered)
-    )
-    push_in = bool(
-        re.search(
-            r"\b(?:push[- ]?in|zoom\s+in|ken\s+burns)\b",
+        or re.search(
+            r"\b(?:make|keep)\s+(?:this\s+|the\s+)?(?:shot|clip)\s+static\b",
             lowered,
         )
     )
-    if not remove_motion and not push_in:
-        return [], []
 
-    if remove_motion:
-        mode = "remove_motion"
-    else:
-        mode = "push_in"
+    target_overlay = any(
+        term in lowered for term in ("b-roll", "broll", "b roll", "overlay")
+    )
+    target_kind = "overlay" if target_overlay else "video"
 
-    if re.search(r"\b(?:strong|stronger|dramatic|punchy)\b", lowered):
-        zoom_multiplier = 1.12
-    elif re.search(r"\b(?:subtle|gentle|slow|slight)\b", lowered):
-        zoom_multiplier = 1.05
-    else:
-        zoom_multiplier = 1.08
+    zoom_in = bool(
+        re.search(r"\b(?:zoom\s+in|push[ -]?in)\b", lowered)
+        or "ken burns" in lowered
+    )
+    zoom_out = bool(re.search(r"\b(?:zoom\s+out|pull[ -]?out)\b", lowered))
+    pan_left = "pan left" in lowered
+    pan_right = "pan right" in lowered
+    pan_up = "pan up" in lowered
+    pan_down = "pan down" in lowered
+
+    if not remove_motion and not any(
+        (zoom_in, zoom_out, pan_left, pan_right, pan_up, pan_down)
+    ):
+        if re.search(
+            r"\b(?:(?:add|give|use)\s+(?:some\s+)?(?:subtle\s+|gentle\s+)?motion|"
+            r"subtle\s+motion)\b",
+            lowered,
+        ):
+            zoom_in = True
+        else:
+            return [], []
+
+    intensity = 0.08
+    if re.search(r"\b(?:slight|slightly|subtle|gentle|slow|slowly)\b", lowered):
+        intensity = 0.05
+    elif re.search(r"\b(?:strong|stronger|dramatic|much)\b", lowered):
+        intensity = 0.12
+
+    easing = "ease_in_out"
+    if "linear" in lowered:
+        easing = "linear"
+    elif re.search(r"\bease\s+in\b", lowered) and "out" not in lowered:
+        easing = "ease_in"
+    elif re.search(r"\bease\s+out\b", lowered) and "in" not in lowered:
+        easing = "ease_out"
 
     operations: list[dict] = []
     for track in sequence.get("tracks") or []:
-        if track.get("kind") != "video" or track.get("locked"):
+        if track.get("kind") != target_kind or track.get("locked"):
             continue
         for clip in track.get("clips") or []:
-            if not _contained(
-                int(clip.get("timeline_start") or 0),
-                int(clip.get("duration") or 0),
+            start_tick = int(clip.get("timeline_start") or 0)
+            duration = int(clip.get("duration") or 0)
+            if duration <= 0 or not _contained(
+                start_tick,
+                duration,
                 scope_start,
                 scope_end,
             ):
@@ -476,44 +517,95 @@ def _motion_operations(
             base_scale = float(transform.get("scale", 1.0))
             base_x = float(transform.get("position_x", 0.0))
             base_y = float(transform.get("position_y", 0.0))
+            metadata = clip.get("metadata") or {}
 
-            if mode == "remove_motion":
+            has_pan = any((pan_left, pan_right, pan_up, pan_down))
+            has_crop_slack = bool(metadata.get("reframe")) or base_scale >= 1.1
+            if has_pan and not has_crop_slack:
+                # Without source dimensions here, ShortCut cannot prove that moving
+                # an uncropped frame will not expose canvas. Prefer no edit.
+                continue
+
+            if remove_motion:
                 keyframes: list[dict] = []
+                preset = "static"
                 reason = (
-                    "Remove transform motion while preserving this clip's static framing, "
+                    "Remove transform motion while preserving the clip's static framing, "
                     "timeline position, duration and source range."
                 )
-                preset = "static"
             else:
-                end_scale = round(min(10.0, max(base_scale + 0.01, base_scale * zoom_multiplier)), 6)
-                if end_scale <= base_scale:
-                    continue
+                start_scale = base_scale
+                end_scale = base_scale
+                start_x = base_x
+                end_x = base_x
+                start_y = base_y
+                end_y = base_y
+
+                if zoom_in:
+                    end_scale = min(10.0, base_scale * (1.0 + intensity))
+                elif zoom_out:
+                    start_scale = min(10.0, base_scale * (1.0 + intensity))
+
+                x_offset = float(sequence.get("width") or 1080) * intensity * 0.30
+                y_offset = float(sequence.get("height") or 1920) * intensity * 0.20
+
+                if any((pan_left, pan_right, pan_up, pan_down)):
+                    # Grow the frame while moving it so a verified crop keeps
+                    # enough edge coverage throughout the pan.
+                    end_scale = max(end_scale, min(10.0, base_scale * (1.0 + intensity)))
+
+                # Camera-direction semantics: pan right moves the media left.
+                if pan_right:
+                    end_x = base_x - x_offset
+                elif pan_left:
+                    end_x = base_x + x_offset
+                if pan_up:
+                    end_y = base_y + y_offset
+                elif pan_down:
+                    end_y = base_y - y_offset
+
                 keyframes = [
                     {
                         "at": 0.0,
-                        "scale": base_scale,
-                        "position_x": base_x,
-                        "position_y": base_y,
-                        "easing": "ease_in_out",
+                        "scale": round(start_scale, 6),
+                        "position_x": round(start_x, 3),
+                        "position_y": round(start_y, 3),
+                        "easing": easing,
                     },
                     {
                         "at": 1.0,
-                        "scale": end_scale,
-                        "position_x": base_x,
-                        "position_y": base_y,
-                        "easing": "ease_in_out",
+                        "scale": round(end_scale, 6),
+                        "position_x": round(end_x, 3),
+                        "position_y": round(end_y, 3),
+                        "easing": easing,
                     },
                 ]
+
+                labels = []
+                if zoom_in:
+                    labels.append("push in")
+                if zoom_out:
+                    labels.append("pull out")
+                if pan_left:
+                    labels.append("pan left")
+                if pan_right:
+                    labels.append("pan right")
+                if pan_up:
+                    labels.append("pan up")
+                if pan_down:
+                    labels.append("pan down")
+                preset = "_".join(label.replace(" ", "_") for label in labels) or "motion"
                 reason = (
-                    f"Add a bounded push-in from scale {base_scale:.3f} to "
-                    f"{end_scale:.3f} without changing clip timing or source media."
+                    "Apply "
+                    + " + ".join(labels or ["subtle motion"])
+                    + f" using {easing.replace('_', ' ')} easing without changing "
+                    "clip timing or source media."
                 )
-                preset = "push_in"
 
             operations.append(
                 _operation(
                     operation="set_motion_keyframes",
-                    component="story",
+                    component="broll" if target_kind == "overlay" else "story",
                     payload={
                         "sequence_id": sequence["id"],
                         "track_id": track["id"],
@@ -525,8 +617,20 @@ def _motion_operations(
                 )
             )
 
-    return [mode], operations
-
+    if remove_motion:
+        intent = "remove_motion"
+    else:
+        requested = [
+            ("push_in", zoom_in),
+            ("pull_out", zoom_out),
+            ("pan_left", pan_left),
+            ("pan_right", pan_right),
+            ("pan_up", pan_up),
+            ("pan_down", pan_down),
+        ]
+        active = [name for name, enabled in requested if enabled]
+        intent = active[0] if len(active) == 1 else "visual_motion"
+    return [intent], operations
 
 def _transition_operations(
     *,
@@ -677,6 +781,7 @@ def _transition_operations(
             )
 
     return [mode], operations
+
 
 
 def _caption_operations(
@@ -1016,9 +1121,8 @@ def build_constrained_proposal(
         raise ValueError(
             "Create With Me currently supports scoped pacing changes, diarized "
             "speaker removal with sequence-wide ripple, semantic B-roll "
-            "replacement/removal, bounded visual push-in motion, visual "
-            "fade/slide transitions, caption styling/animation/removal, and "
-            "music volume/removal."
+            "replacement/removal, bounded zoom/pan visual motion, visual fade/slide transitions, caption "
+            "styling/animation/removal, and music volume/removal."
         )
 
     structural = [
@@ -1067,7 +1171,7 @@ def build_constrained_proposal(
     elif "story" in touched:
         preserve_rules.append(
             "Preserve primary clip timing, ordering and source ranges; change only "
-            "the approved visual transform/transition styling."
+            "the approved visual transform motion."
         )
     else:
         preserve_rules.append("Do not regenerate or reorder primary story clips.")
@@ -1159,7 +1263,7 @@ def apply_constrained_operations(
             continue
 
         if op == "set_motion_keyframes":
-            if component != "story":
+            if component not in {"story", "broll"}:
                 raise ValueError("Motion-keyframe operation has invalid component")
             track = next(
                 (
@@ -1169,8 +1273,14 @@ def apply_constrained_operations(
                 ),
                 None,
             )
-            if not track or track.get("kind") != "video" or track.get("locked"):
-                raise ValueError("Motion target video track is unavailable or locked")
+            expected_kind = "video" if component == "story" else "overlay"
+            if (
+                not track
+                or track.get("kind") != expected_kind
+                or track.get("locked")
+            ):
+                raise ValueError("Motion target track is unavailable or locked")
+
             clip = next(
                 (
                     item
