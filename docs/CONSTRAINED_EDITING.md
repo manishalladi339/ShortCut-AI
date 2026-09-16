@@ -16,12 +16,40 @@ ProjectState version, not as permission to regenerate the timeline.
 
 Supported operations now include:
 
+- scoped story pacing / speed-up with synchronized retiming;
 - diarized speaker removal with sequence-wide ripple;
 - transcript captions: remove or restyle;
 - AI B-roll overlays: semantically replace or remove;
 - music beds: remove, mute, lower or raise volume.
 
 Unsupported instructions return an error and leave the timeline untouched.
+
+## Scoped pacing
+
+A command such as `Make the first 10 seconds faster` creates one reviewed
+`retime_scope` operation.
+
+The default pacing change is intentionally conservative at 1.15x. The creator may
+request an explicit factor from 1.05x through 1.50x.
+
+ShortCut retimes the approved interval as a sequence operation rather than merely
+setting a speed flag:
+
+- primary video clips are split at scope boundaries when required;
+- only the in-scope primary segments receive the faster playback rate;
+- retained source ranges stay grounded in the original media;
+- later primary clips ripple earlier by the time saved;
+- AI B-roll inside the region is shortened and remapped;
+- later overlays shift with the story;
+- transcript captions are remapped into the compressed interval;
+- music beds shorten with the new sequence duration.
+
+Pacing refuses to run when a locked synchronized track would drift or when a
+user-authored/non-music clip inside the region would require destructive retiming.
+
+Structural story operations are reviewed one at a time. A pacing change therefore
+cannot be silently combined with speaker removal, caption edits, B-roll changes or
+music edits in the same proposal.
 
 ## Ripple-safe speaker removal
 
@@ -102,6 +130,5 @@ resulting version after apply.
 
 The same constrained-operation model will expand to:
 
-- scoped pacing/speed changes such as “make the first 10 seconds faster”;
 - QA-driven approved fixes;
 - more complex story restructuring with explicit preservation constraints.
