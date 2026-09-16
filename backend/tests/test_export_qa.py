@@ -124,3 +124,44 @@ def test_export_qa_degrades_signal_analysis_failure_to_warning(monkeypatch, tmp_
     )
     assert issue["severity"] == "warning"
     assert report["error_count"] == 0
+
+
+
+def test_caption_out_of_bounds_uses_primary_visual_end_not_caption_extended_render():
+    plan = _plan(
+        clips=[_clip("p1", asset_id="a", start=0, duration=10000)],
+        captions=[
+            RenderCaption(
+                id="late",
+                start=9000,
+                duration=2500,
+                text="Runs past picture",
+                style={},
+            )
+        ],
+        duration=11500,
+    )
+    issues, _ = analyze_plan_quality(plan)
+    issue = next(item for item in issues if item["code"] == "captions.out_of_bounds")
+    assert issue["auto_fixable"] is True
+    assert issue["evidence"]["visual_duration_sec"] == 10.0
+
+
+def test_audio_level_warnings_are_not_marked_auto_fixable_yet():
+    from services.export_qa import _signal_issues
+
+    issues, _ = _signal_issues(
+        {
+            "black_segments": [],
+            "silence_segments": [],
+            "mean_volume_db": -40.0,
+            "max_volume_db": -0.05,
+        }
+    )
+    level_issues = [
+        item
+        for item in issues
+        if item["code"] in {"audio.low_average_level", "audio.peak_near_zero"}
+    ]
+    assert len(level_issues) == 2
+    assert all(item["auto_fixable"] is False for item in level_issues)
