@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from core.config import settings
 from core.deps import get_current_user
 from db.mongo import get_db
 from models.project_intelligence import ProjectIntelligenceOut
@@ -39,6 +40,7 @@ async def rebuild_project_intelligence(
             "project_id": project_id,
             "user_id": user["id"],
             "status": "completed",
+            "embedding_model": settings.EMBEDDING_MODEL,
         },
         {"_id": 0},
     ).to_list(500)
