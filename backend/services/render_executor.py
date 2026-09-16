@@ -188,6 +188,32 @@ def _transition_seconds(
     return duration
 
 
+def _audio_transition_seconds(
+    transition,
+    *,
+    track_kind: str,
+    numerator: int,
+    denominator: int,
+    clip_duration_sec: float,
+) -> float:
+    """Return audio fade duration without applying visual slide semantics to audio."""
+    if transition is None:
+        return 0.0
+    kind = _transition_kind(transition)
+    if kind != "fade":
+        if track_kind == "audio":
+            raise RenderExecutionError(
+                "standalone audio clips support fade transitions only"
+            )
+        return 0.0
+    return _transition_seconds(
+        transition,
+        numerator=numerator,
+        denominator=denominator,
+        clip_duration_sec=clip_duration_sec,
+    )
+
+
 def _lerp_expression(start: str, end: str, progress: str) -> str:
     eased = _ease_expression(progress, "ease_in_out")
     return f"({start})+(({end})-({start}))*({eased})"
@@ -484,14 +510,16 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     * 1000
                 )
                 label = f"amixsrc{idx}"
-                fade_in = _transition_seconds(
+                fade_in = _audio_transition_seconds(
                     clip.transition_in,
+                    track_kind=clip.track_kind,
                     numerator=plan.timebase_numerator,
                     denominator=plan.timebase_denominator,
                     clip_duration_sec=target_duration,
                 )
-                fade_out = _transition_seconds(
+                fade_out = _audio_transition_seconds(
                     clip.transition_out,
+                    track_kind=clip.track_kind,
                     numerator=plan.timebase_numerator,
                     denominator=plan.timebase_denominator,
                     clip_duration_sec=target_duration,
