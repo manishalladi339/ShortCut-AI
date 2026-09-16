@@ -23,6 +23,7 @@ class ProjectTopic(BaseModel):
     label: str
     unit_count: int = Field(ge=1)
     asset_ids: list[str] = Field(default_factory=list)
+    member_keys: list[str] = Field(default_factory=list)
     evidence: list[ProjectEvidence] = Field(default_factory=list)
 
 
