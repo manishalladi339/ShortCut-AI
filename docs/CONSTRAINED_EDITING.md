@@ -14,22 +14,53 @@ ProjectState version, not as permission to regenerate the timeline.
    version and commits the approved operations in one state replacement.
 7. A stale proposal is rejected instead of being silently rebased.
 
-The first release deliberately protects primary story clips. Supported localized
-components are:
+Supported operations now include:
 
+- diarized speaker removal with sequence-wide ripple;
 - transcript captions: remove or restyle;
 - AI B-roll overlays: remove;
 - music beds: remove, mute, lower or raise volume.
 
-Primary video cuts, cross-track ripple edits and replacement B-roll are not yet
-executed by this planner. Unsupported instructions return an error and leave the
-timeline untouched.
+Unsupported instructions return an error and leave the timeline untouched.
+
+## Ripple-safe speaker removal
+
+A command such as `Remove Speaker B` is grounded in the `primary_speaker`
+metadata attached to AI-generated primary story clips.
+
+ShortCut first identifies every matching primary clip fully contained by the
+approved scope. It then creates one atomic `remove_speaker_ripple` operation
+instead of a collection of unrelated clip edits.
+
+When the operation is applied:
+
+- selected primary clips are removed;
+- retained primary clips keep their source ranges and ordering;
+- later timeline content shifts earlier by the removed duration;
+- transcript/AI captions fully inside the removed range are removed;
+- later captions shift with the story;
+- AI B-roll and music beds may be shortened or removed when they overlap the
+  deleted range;
+- synchronized items after the deleted range shift by the same amount.
+
+ShortCut refuses the edit when it cannot preserve synchronization safely. Examples
+include:
+
+- a locked track that would lose sync;
+- another primary clip ambiguously overlapping the deleted interval;
+- user-authored/non-music media that would need destructive truncation;
+- a caption that crosses a deletion boundary and would require rewriting its text.
+
+This is intentionally more conservative than blindly ripple-deleting one track.
 
 ## Scope invariant
 
-An operation is proposed only when the entire target cue or clip is contained in
-the approved time range. This prevents a clip that crosses a scope boundary from
-being mutated outside the user's requested region.
+For localized operations, a target cue or clip is mutated only when the entire
+item is contained inside the approved time range.
+
+For speaker removal, only matching primary clips fully inside the requested scope
+become deletion intervals. The resulting time removal must then be applied
+consistently across the whole synchronized sequence.
 
 ## API
 
@@ -43,10 +74,9 @@ resulting version after apply.
 
 ## Next extensions
 
-The constrained-operation model is intended to expand to:
+The same constrained-operation model will expand to:
 
-- sequence-wide ripple-safe primary clip changes;
-- replacement B-roll selected through project semantic retrieval;
-- scoped pacing changes;
-- speaker removal with synchronized captions/overlays/audio;
-- natural-language multi-step changes backed by the same preservation validator.
+- scoped pacing/speed changes such as “make the first 10 seconds faster”;
+- semantic B-roll replacement using Project Intelligence retrieval;
+- QA-driven approved fixes;
+- more complex story restructuring with explicit preservation constraints.

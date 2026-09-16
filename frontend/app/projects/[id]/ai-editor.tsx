@@ -24,6 +24,7 @@ import { Button } from "@/src/components/ui/Button";
 import { colors, radius, spacing, typography } from "@/src/theme";
 
 const EXAMPLES = [
+  "Remove Speaker B",
   "Make the captions smaller in the first 10 seconds",
   "Remove B-roll from the intro",
   "Lower the music",
@@ -110,7 +111,7 @@ export default function AIEditorScreen() {
       Alert.alert(
         "ShortCut kept your timeline unchanged",
         e?.message ??
-          "This instruction is not supported safely yet. Try a caption, B-roll or music change.",
+          "This instruction is not supported safely yet. Try speaker removal, a caption change, B-roll removal, or a music adjustment.",
       );
     } finally {
       setPlanning(false);
@@ -264,11 +265,11 @@ export default function AIEditorScreen() {
           <Ionicons name="shield-checkmark-outline" color={colors.success} size={21} />
           <View style={{ flex: 1 }}>
             <Text style={[typography.bodyMed, { color: colors.textHigh }]}>
-              Primary story cuts are protected
+              Story edits use ripple safety
             </Text>
             <Text style={[typography.caption, { color: colors.textMedium, marginTop: spacing.xs }]}>
-              This first constrained editor only mutates captions, AI B-roll and music. Unsupported
-              requests fail without touching the timeline.
+              Speaker removal ripples synchronized tracks atomically. If a locked or user-authored
+              item would be destructively truncated, ShortCut refuses the edit instead.
             </Text>
           </View>
         </View>
@@ -389,6 +390,7 @@ export default function AIEditorScreen() {
 function componentIcon(
   component: ConstrainedEditOperation["component"],
 ): keyof typeof Ionicons.glyphMap {
+  if (component === "story") return "cut-outline";
   if (component === "captions") return "text-outline";
   if (component === "broll") return "layers-outline";
   return "musical-notes-outline";

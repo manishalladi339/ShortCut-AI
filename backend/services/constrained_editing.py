@@ -1,8 +1,8 @@
 """Localized Create-With-Me planning and deterministic mutation.
 
-The planner intentionally supports a narrow set of timeline components first:
-captions, AI B-roll overlays, and AI/user-selected music beds. Primary story clips
-are preserved until we can guarantee sequence-wide ripple semantics.
+The planner supports localized caption/B-roll/music edits plus a conservative
+sequence-wide speaker-removal operation. Story edits are applied atomically with
+global ripple semantics so synchronized timeline content cannot silently drift.
 """
 from __future__ import annotations
 
@@ -106,6 +106,280 @@ def _operation(
         "payload": payload,
         "reason": reason,
     }
+
+
+def _merge_tick_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    merged: list[list[int]] = []
+    for start, end in sorted(intervals):
+        if end <= start:
+            continue
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return [(start, end) for start, end in merged]
+
+
+def _deleted_before(tick: int, intervals: list[tuple[int, int]]) -> int:
+    deleted = 0
+    for start, end in intervals:
+        if tick <= start:
+            break
+        deleted += max(0, min(tick, end) - start)
+    return deleted
+
+
+def _deleted_overlap(
+    start: int,
+    end: int,
+    intervals: list[tuple[int, int]],
+) -> int:
+    return sum(
+        max(0, min(end, removed_end) - max(start, removed_start))
+        for removed_start, removed_end in intervals
+    )
+
+
+def _available_primary_speakers(sequence: dict) -> list[str]:
+    return sorted(
+        {
+            str((clip.get("metadata") or {}).get("primary_speaker"))
+            for track in (sequence.get("tracks") or [])
+            if track.get("kind") == "video"
+            for clip in (track.get("clips") or [])
+            if (clip.get("metadata") or {}).get("primary_speaker")
+        }
+    )
+
+
+def _resolve_speaker_target(instruction: str, available: list[str]) -> str | None:
+    lowered = instruction.lower()
+    normalized = lowered.replace("-", "_").replace(" ", "_")
+
+    for speaker in available:
+        value = speaker.lower()
+        if value in lowered or value in normalized:
+            return speaker
+
+    letter = re.search(r"\bspeaker\s+([a-z])\b", lowered)
+    if letter:
+        candidate = f"speaker_{ord(letter.group(1)) - ord('a')}"
+        return next(
+            (speaker for speaker in available if speaker.lower() == candidate),
+            None,
+        )
+
+    number = re.search(r"\bspeaker[_\s-]?(\d+)\b", lowered)
+    if number:
+        candidate = f"speaker_{number.group(1)}"
+        return next(
+            (speaker for speaker in available if speaker.lower() == candidate),
+            None,
+        )
+    return None
+
+
+def _speaker_removal_operations(
+    *,
+    instruction: str,
+    sequence: dict,
+    scope_start: int,
+    scope_end: int,
+) -> tuple[list[str], list[dict]]:
+    lowered = instruction.lower()
+    wants_removal = bool(
+        re.search(r"\b(?:remove|delete|cut)\s+(?:out\s+)?(?:all\s+of\s+)?speaker", lowered)
+    )
+    if not wants_removal:
+        return [], []
+
+    available = _available_primary_speakers(sequence)
+    target = _resolve_speaker_target(instruction, available)
+    if not target:
+        names = ", ".join(available) if available else "none"
+        raise ValueError(
+            "Could not resolve the requested speaker from diarized primary clips. "
+            f"Available speaker labels: {names}."
+        )
+
+    matching: list[dict] = []
+    for track in sequence.get("tracks") or []:
+        if track.get("kind") != "video":
+            continue
+        if track.get("locked"):
+            raise ValueError("Primary video track is locked; speaker removal was not proposed.")
+        for clip in track.get("clips") or []:
+            metadata = clip.get("metadata") or {}
+            if metadata.get("primary_speaker") != target:
+                continue
+            if not _contained(
+                int(clip.get("timeline_start") or 0),
+                int(clip.get("duration") or 0),
+                scope_start,
+                scope_end,
+            ):
+                continue
+            matching.append(clip)
+
+    if not matching:
+        return [f"remove_{target}"], []
+
+    intervals = _merge_tick_intervals(
+        [
+            (
+                int(clip["timeline_start"]),
+                int(clip["timeline_start"]) + int(clip["duration"]),
+            )
+            for clip in matching
+        ]
+    )
+    total_removed = sum(end - start for start, end in intervals)
+    tps = _ticks_per_second(sequence)
+    operation = _operation(
+        operation="remove_speaker_ripple",
+        component="story",
+        payload={
+            "sequence_id": sequence["id"],
+            "speaker": target,
+            "clip_ids": [clip["id"] for clip in matching],
+            "removed_intervals": [
+                {"start": start, "end": end} for start, end in intervals
+            ],
+            "removed_duration_ticks": total_removed,
+        },
+        reason=(
+            f"Remove {len(matching)} diarized primary clip"
+            f"{'' if len(matching) == 1 else 's'} for {target} and ripple "
+            f"{total_removed / tps:.2f}s out of the complete sequence."
+        ),
+    )
+    return [f"remove_{target}"], [operation]
+
+
+def _apply_speaker_ripple(sequence: dict, payload: dict) -> None:
+    target = str(payload.get("speaker") or "")
+    selected_ids = {str(value) for value in (payload.get("clip_ids") or [])}
+    if not target or not selected_ids:
+        raise ValueError("Speaker-removal proposal is missing its grounded clip selection")
+
+    selected: list[dict] = []
+    for track in sequence.get("tracks") or []:
+        if track.get("kind") != "video":
+            continue
+        for clip in track.get("clips") or []:
+            if clip.get("id") not in selected_ids:
+                continue
+            if (clip.get("metadata") or {}).get("primary_speaker") != target:
+                raise ValueError("Speaker-removal target no longer matches the proposal")
+            selected.append(clip)
+
+    if {clip.get("id") for clip in selected} != selected_ids:
+        raise ValueError("One or more speaker-removal clips no longer exist")
+
+    intervals = _merge_tick_intervals(
+        [
+            (
+                int(clip["timeline_start"]),
+                int(clip["timeline_start"]) + int(clip["duration"]),
+            )
+            for clip in selected
+        ]
+    )
+    if not intervals:
+        raise ValueError("Speaker-removal proposal has no valid timeline intervals")
+
+    earliest = intervals[0][0]
+    for track in sequence.get("tracks") or []:
+        clips = track.get("clips") or []
+        if track.get("locked") and any(
+            int(clip.get("timeline_start") or 0) + int(clip.get("duration") or 0)
+            > earliest
+            for clip in clips
+        ):
+            raise ValueError(
+                f"Track '{track.get('name') or track.get('id')}' is locked and would lose sync"
+            )
+
+        next_clips: list[dict] = []
+        for clip in clips:
+            clip_id = str(clip.get("id") or "")
+            start = int(clip.get("timeline_start") or 0)
+            duration = int(clip.get("duration") or 0)
+            end = start + duration
+
+            if track.get("kind") == "video" and clip_id in selected_ids:
+                continue
+
+            overlap = _deleted_overlap(start, end, intervals)
+            if track.get("kind") == "video" and overlap > 0:
+                raise ValueError(
+                    "Another primary video clip overlaps the removed speaker range; "
+                    "ShortCut refused to create an ambiguous ripple edit"
+                )
+
+            shifted = deepcopy(clip)
+            new_start = start - _deleted_before(start, intervals)
+            new_end = end - _deleted_before(end, intervals)
+            new_duration = max(0, new_end - new_start)
+
+            if overlap > 0:
+                metadata = clip.get("metadata") or {}
+                kind = track.get("kind")
+                safe_ai_overlay = kind == "overlay" and bool(
+                    metadata.get("broll") or metadata.get("ai_plan_id")
+                )
+                safe_music = kind == "audio" and bool(metadata.get("music_bed"))
+                if not (safe_ai_overlay or safe_music):
+                    raise ValueError(
+                        "A user-authored or non-music clip overlaps the speaker range; "
+                        "ShortCut refused to truncate it automatically"
+                    )
+                if new_duration <= 0:
+                    continue
+
+                ratio = new_duration / max(1, duration)
+                shifted["duration"] = new_duration
+                shifted["source_duration"] = max(
+                    1,
+                    round(int(clip.get("source_duration") or duration) * ratio),
+                )
+                shifted["transition_in"] = None
+                shifted["transition_out"] = None
+                shifted["metadata"] = {
+                    **metadata,
+                    "ripple_trimmed": True,
+                    "ripple_removed_speaker": target,
+                }
+
+            shifted["timeline_start"] = new_start
+            next_clips.append(shifted)
+
+        track["clips"] = next_clips
+
+    next_captions: list[dict] = []
+    for cue in sequence.get("captions") or []:
+        start = int(cue.get("start") or 0)
+        duration = int(cue.get("duration") or 0)
+        end = start + duration
+        overlap = _deleted_overlap(start, end, intervals)
+        if overlap >= duration and duration > 0:
+            style = cue.get("style") or {}
+            if style.get("source") == "transcript" or style.get("ai_plan_id"):
+                continue
+            raise ValueError(
+                "A user-authored caption is fully inside the removed speaker range"
+            )
+        if overlap > 0:
+            raise ValueError(
+                "A caption crosses the speaker-removal boundary; "
+                "ShortCut refused to truncate its text automatically"
+            )
+
+        shifted = deepcopy(cue)
+        shifted["start"] = start - _deleted_before(start, intervals)
+        next_captions.append(shifted)
+
+    sequence["captions"] = next_captions
 
 
 def _caption_operations(
@@ -364,7 +638,12 @@ def build_constrained_proposal(
 
     intents: list[str] = []
     operations: list[dict] = []
-    for planner in (_caption_operations, _broll_operations, _music_operations):
+    for planner in (
+        _speaker_removal_operations,
+        _caption_operations,
+        _broll_operations,
+        _music_operations,
+    ):
         next_intents, next_operations = planner(
             instruction=instruction,
             sequence=sequence,
@@ -376,9 +655,9 @@ def build_constrained_proposal(
 
     if not intents:
         raise ValueError(
-            "This first constrained editor supports caption restyling/removal, "
-            "AI B-roll removal, and music volume/removal. Primary story cuts are "
-            "preserved until sequence-wide ripple editing is available."
+            "Create With Me currently supports diarized speaker removal with "
+            "sequence-wide ripple, caption restyling/removal, AI B-roll removal, "
+            "and music volume/removal."
         )
     if not operations:
         raise ValueError(
@@ -387,17 +666,27 @@ def build_constrained_proposal(
         )
 
     touched = sorted({operation["component"] for operation in operations})
+    touched_labels = {
+        "story": "primary story clips",
+        "captions": "captions",
+        "broll": "B-roll",
+        "music": "music",
+    }
     preserved = [
         component
         for component in ("primary story clips", "captions", "B-roll", "music")
-        if component.lower().replace("-", "") not in {
-            value.lower().replace("-", "") for value in touched
-        }
+        if component not in {touched_labels.get(value, value) for value in touched}
     ]
     preserve_rules = [
         f"Preserve all timeline content outside {start_sec:.2f}s–{end_sec:.2f}s.",
-        "Do not regenerate or reorder primary story clips.",
     ]
+    if "story" in touched:
+        preserve_rules.append(
+            "Ripple synchronized timeline items globally while preserving retained "
+            "primary clip source ranges and ordering."
+        )
+    else:
+        preserve_rules.append("Do not regenerate or reorder primary story clips.")
     if preserved:
         preserve_rules.append("Preserve untouched components: " + ", ".join(preserved) + ".")
 
@@ -440,6 +729,13 @@ def apply_constrained_operations(
 
         op = operation.get("operation")
         component = operation.get("component")
+
+        if op == "remove_speaker_ripple":
+            if component != "story":
+                raise ValueError("Speaker-removal operation has invalid component")
+            _apply_speaker_ripple(sequence, payload)
+            continue
+
         if op in {"update_caption", "remove_caption"}:
             if component != "captions":
                 raise ValueError("Caption operation has invalid component")
