@@ -1,6 +1,10 @@
 """Tests for deterministic fade/slide transition rendering helpers."""
+import pytest
+
 from models.render_plan import RenderTransition
 from services.render_executor import (
+    RenderExecutionError,
+    _audio_transition_seconds,
     _transition_kind,
     _transition_position_expressions,
     _transition_seconds,
@@ -34,7 +38,7 @@ def test_slide_in_from_left_moves_from_off_canvas_to_base_position():
     assert "-w" in x
     assert "(W-w)/2" in x
     assert "2.25000000" in x
-    assert y != ""
+    assert y
 
 
 def test_slide_out_to_right_uses_canvas_width_as_exit_target():
@@ -49,11 +53,11 @@ def test_slide_out_to_right_uses_canvas_width_as_exit_target():
         timeline_start=1.0,
         target_duration=5.0,
     )
-    assert "(W)" in x or "W" in x
+    assert "W" in x
     assert "5.60000000" in x
 
 
-def test_fade_transition_does_not_change_overlay_position_expression():
+def test_fade_does_not_change_overlay_position_expression():
     fade = RenderTransition(kind="fade", duration=200)
     x, y = _transition_position_expressions(
         base_x="base-x",
@@ -67,3 +71,38 @@ def test_fade_transition_does_not_change_overlay_position_expression():
     )
     assert x == "base-x"
     assert y == "base-y"
+
+
+def test_visual_slide_on_video_does_not_create_audio_fade():
+    slide = RenderTransition(kind="slide_left", duration=250)
+    value = _audio_transition_seconds(
+        slide,
+        track_kind="video",
+        numerator=1000,
+        denominator=1,
+        clip_duration_sec=4.0,
+    )
+    assert value == 0.0
+
+
+def test_standalone_audio_rejects_visual_slide_transition():
+    slide = RenderTransition(kind="slide_left", duration=250)
+    with pytest.raises(RenderExecutionError, match="fade transitions only"):
+        _audio_transition_seconds(
+            slide,
+            track_kind="audio",
+            numerator=1000,
+            denominator=1,
+            clip_duration_sec=4.0,
+        )
+
+
+def test_audio_fade_remains_supported():
+    fade = RenderTransition(kind="fade", duration=300)
+    assert _audio_transition_seconds(
+        fade,
+        track_kind="audio",
+        numerator=1000,
+        denominator=1,
+        clip_duration_sec=4.0,
+    ) == 0.3
