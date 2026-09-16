@@ -1,10 +1,10 @@
+import { Alert } from "@/src/utils/alerts";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -31,6 +31,7 @@ export default function AssetsLibrary() {
   const params = useLocalSearchParams<{ project_id?: string }>();
   const [items, setItems] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [kind, setKind] = useState<KindFilter>("all");
 
@@ -66,8 +67,11 @@ export default function AssetsLibrary() {
       const file = res.assets[0];
       const mime = file.mimeType ?? "application/octet-stream";
       const detectedKind = detectKind(mime);
-      const size = file.size ?? 0;
+      const blobRes = await fetch(file.uri);
+      const blob = file.file ?? await blobRes.blob();
+      const size = file.size || blob.size;
       setUploading(true);
+      setUploadProgress(0);
 
       // 1) Presign
       const presign = await assetsApi.presign({
@@ -79,9 +83,7 @@ export default function AssetsLibrary() {
       });
 
       // 2) Fetch blob from local URI, PUT to upload_url
-      const blobRes = await fetch(file.uri);
-      const blob = await blobRes.blob();
-      const ok = await uploadBinary(presign.upload_url, presign.upload_headers, blob);
+      const ok = await uploadBinary(presign.upload_url, presign.upload_headers, blob, setUploadProgress);
       if (!ok) throw new Error("Upload failed");
 
       // 3) Confirm
@@ -138,6 +140,7 @@ export default function AssetsLibrary() {
         </Pressable>
       </View>
 
+      {uploading ? <Text accessibilityLiveRegion="polite" style={{color: colors.aiAccent, padding: 16}}>Uploading · {uploadProgress}%</Text> : null}
       <ChipRow<KindFilter>
         items={[
           { value: "all", label: "All" },

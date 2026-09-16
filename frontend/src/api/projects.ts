@@ -47,7 +47,7 @@ export interface ProjectCreatePayload {
 }
 
 export const projectsApi = {
-  list: (archived = false) => api<ProjectListResp>(`/projects?archived=${archived}`),
+  list: (archived = false) => api<ProjectListResp>(`/projects?archived=${archived}&limit=100`),
   recent: () => api<Project[]>("/projects/recent"),
   continueEditing: () => api<Project[]>("/projects/continue-editing"),
   get: (id: string) => api<Project>(`/projects/${id}`),

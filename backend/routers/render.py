@@ -1,4 +1,5 @@
 """Render-plan and export API."""
+
 from __future__ import annotations
 
 import uuid
@@ -53,26 +54,48 @@ async def create_export(
         user_id=user["id"],
         sequence_id=body.sequence_id,
     )
+    plan.watermark = user.get("subscription_tier", "free") == "free"
+    if body.preset == "vertical_1080p":
+        plan.width, plan.height = 1080, 1920
     if not plan.clips:
         raise HTTPException(
             status_code=422,
-            detail={"error": {"code": "render.empty_sequence", "message": "Sequence has no renderable clips"}},
+            detail={
+                "error": {
+                    "code": "render.empty_sequence",
+                    "message": "Sequence has no renderable clips",
+                }
+            },
         )
 
+    duration = plan.duration_ticks * plan.timebase_denominator / plan.timebase_numerator
+    if duration > 300 or len(plan.clips) > 100:
+        raise HTTPException(
+            status_code=422, detail="Exports support at most 5 minutes and 100 clips"
+        )
+    if plan.width % 2 or plan.height % 2 or plan.width * plan.height > 3840 * 2160:
+        raise HTTPException(
+            status_code=422, detail="Use even frame dimensions up to 4K"
+        )
     db = get_db()
     now = utc_now()
     export_id = str(uuid.uuid4())
-    job = await job_service.enqueue(
-        user_id=user["id"],
-        project_id=project_id,
-        job_type=JobType.render_export,
-        payload={
-            "export_id": export_id,
-            "preset": body.preset,
-            "render_plan": plan.model_dump(mode="json"),
-        },
-        max_attempts=2,
-    )
+    job_id = str(uuid.uuid4())
+
+    async def enqueue_export():
+        return await job_service.enqueue(
+            user_id=user["id"],
+            project_id=project_id,
+            job_type=JobType.render_export,
+            payload={
+                "export_id": export_id,
+                "preset": body.preset,
+                "render_plan": plan.model_dump(mode="json"),
+            },
+            max_attempts=2,
+            job_id=job_id,
+        )
+
     doc = {
         "id": export_id,
         "user_id": user["id"],
@@ -81,7 +104,7 @@ async def create_export(
         "project_state_version": plan.project_state_version,
         "status": "queued",
         "preset": body.preset,
-        "job_id": job["id"],
+        "job_id": job_id,
         "storage_key": None,
         "duration_sec": None,
         "render_metadata": {},
@@ -89,6 +112,7 @@ async def create_export(
         "updated_at": now,
     }
     await db.exports.insert_one(doc)
+    await enqueue_export()
     return _export_out(doc)
 
 
@@ -99,9 +123,8 @@ async def list_exports(
     user: dict = Depends(get_current_user),
 ) -> list[ExportOut]:
     docs = await (
-        get_db().exports.find(
-            {"project_id": project_id, "user_id": user["id"]}, {"_id": 0}
-        )
+        get_db()
+        .exports.find({"project_id": project_id, "user_id": user["id"]}, {"_id": 0})
         .sort("created_at", -1)
         .limit(limit)
         .to_list(limit)
@@ -122,6 +145,8 @@ async def get_export(
     if not doc:
         raise HTTPException(
             status_code=404,
-            detail={"error": {"code": "resource.not_found", "message": "Export not found"}},
+            detail={
+                "error": {"code": "resource.not_found", "message": "Export not found"}
+            },
         )
     return _export_out(doc)

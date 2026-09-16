@@ -1,4 +1,5 @@
 """Canonical ProjectState API with optimistic concurrency and deterministic operations."""
+
 from __future__ import annotations
 
 import copy
@@ -155,9 +156,7 @@ def _require_unlocked(track: dict) -> None:
         raise _error("edit.track_locked", "Track is locked", 409)
 
 
-async def _validate_add_clip_asset(
-    *, state: dict, payload: dict, user_id: str
-) -> None:
+async def _validate_add_clip_asset(*, state: dict, payload: dict, user_id: str) -> None:
     sequence = _find_sequence(state, str(payload.get("sequence_id", "")))
     track = _find_track(sequence, str(payload.get("track_id", "")))
     _require_unlocked(track)
@@ -182,6 +181,63 @@ async def _validate_add_clip_asset(
             "edit.asset_track_mismatch",
             f"{asset['kind']} asset cannot be added to {track['kind']} track",
         )
+
+
+async def _validate_state_assets(state: dict, user_id: str) -> None:
+    ids = {
+        c["asset_id"]
+        for seq in state["sequences"]
+        for t in seq["tracks"]
+        for c in t["clips"]
+    }
+    if not ids:
+        return
+    docs = (
+        await get_db()
+        .assets.find({"id": {"$in": list(ids)}, "user_id": user_id}, {"_id": 0})
+        .to_list(len(ids))
+    )
+    assets = {a["id"]: a for a in docs}
+    if ids - assets.keys():
+        raise _error("edit.asset_not_found", "Timeline contains unavailable media", 404)
+    for seq in state["sequences"]:
+        tps = seq["timebase"]["numerator"] / seq["timebase"]["denominator"]
+        for track in seq["tracks"]:
+            for clip in track["clips"]:
+                a = assets[clip["asset_id"]]
+                if a.get("processing_status") != "ready":
+                    raise _error(
+                        "edit.asset_not_ready", "Media is still processing", 409
+                    )
+                kinds = {
+                    "video": {"video", "image"},
+                    "overlay": {"video", "image"},
+                    "audio": {"audio", "video"},
+                    "caption": set(),
+                }
+                if a["kind"] not in kinds[track["kind"]]:
+                    raise _error(
+                        "edit.asset_track_mismatch",
+                        "Media does not match the track type",
+                    )
+                if a["kind"] != "image" and a.get("duration_sec"):
+                    if (clip["source_start"] + clip["source_duration"]) / tps > a[
+                        "duration_sec"
+                    ] + 0.05:
+                        raise _error(
+                            "edit.source_range", "Clip extends beyond the source media"
+                        )
+                if (
+                    abs(
+                        clip["source_duration"]
+                        - clip["duration"] * clip["playback_rate"]
+                    )
+                    > 2
+                ):
+                    raise _error(
+                        "edit.source_rate",
+                        "Source range must match duration and playback rate",
+                    )
 
 
 def _apply_operation(state: dict, edit: EditOperation) -> dict:
@@ -299,9 +355,7 @@ def _apply_operation(state: dict, edit: EditOperation) -> dict:
             left_source_duration = clip["source_duration"] - 1
         right_source_duration = clip["source_duration"] - left_source_duration
 
-        original_transition_out = copy.deepcopy(
-            clip.get("transition_out")
-        )
+        original_transition_out = copy.deepcopy(clip.get("transition_out"))
         clip["duration"] = left_duration
         clip["source_duration"] = left_source_duration
         clip["transition_out"] = None
@@ -373,7 +427,11 @@ def _apply_operation(state: dict, edit: EditOperation) -> dict:
         else:
             caption_id = str(p.get("caption_id", ""))
             cue = next(
-                (item for item in sequence.get("captions", []) if item["id"] == caption_id),
+                (
+                    item
+                    for item in sequence.get("captions", [])
+                    if item["id"] == caption_id
+                ),
                 None,
             )
             if not cue:
@@ -440,6 +498,8 @@ async def replace_project_state(
         updated_at=now,
     ).model_dump()
 
+    await _validate_state_assets(candidate, user["id"])
+
     result = await db.project_states.replace_one(
         {
             "project_id": project_id,
@@ -486,11 +546,16 @@ async def apply_edit_operation(
             state=current, payload=body.payload, user_id=user["id"]
         )
 
-    candidate = _apply_operation(current, body)
+    try:
+        candidate = _apply_operation(current, body)
+    except (ValueError, TypeError, KeyError) as exc:
+        raise _error("edit.invalid_payload", str(exc)) from exc
     now = utc_now()
     candidate["version"] = current["version"] + 1
     candidate["updated_at"] = now
     candidate = ProjectStateDocument(**candidate).model_dump()
+
+    await _validate_state_assets(candidate, user["id"])
 
     result = await db.project_states.replace_one(
         {
@@ -530,7 +595,8 @@ async def list_project_versions(
 ) -> list[ProjectVersionSummary]:
     await _owned_project(project_id, user["id"])
     docs = await (
-        get_db().project_state_versions.find(
+        get_db()
+        .project_state_versions.find(
             {"project_id": project_id, "user_id": user["id"]},
             {"_id": 0, "version": 1, "snapshot_created_at": 1, "operation": 1},
         )

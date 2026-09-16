@@ -6,6 +6,7 @@ Run one iteration:
 Run continuously:
     python -m workers.media_worker
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,11 +19,16 @@ from db.mongo import close as close_mongo
 from db.mongo import get_db
 from models.job import JobType
 from services import job_service
-from services.media_derivatives import MediaDerivativeError, generate as generate_derivatives
+from services.media_derivatives import (
+    MediaDerivativeError,
+    generate as generate_derivatives,
+)
 from services.media_probe import MediaProbeError, probe
 from services.storage import get_storage, materialize
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s"
+)
 logger = logging.getLogger("shortcut.media-worker")
 
 
@@ -81,20 +87,26 @@ async def process_one() -> bool:
                 }
             },
         )
-        await job_service.succeed(job["id"], {"media_metadata": metadata, "derivatives": derivatives})
+        await job_service.succeed(
+            job["id"], {"media_metadata": metadata, "derivatives": derivatives}
+        )
         logger.info("processed asset %s", asset["id"])
         return True
 
     except (MediaProbeError, MediaDerivativeError) as exc:
         final = job["attempt"] >= job["max_attempts"]
-        await job_service.fail(job, code="media.probe_failed", message=str(exc))
+        if not await job_service.fail(job, code="media.probe_failed", message=str(exc)):
+            return True
         await _sync_asset_failure(job, final)
         logger.warning("media probe failed for job %s: %s", job["id"], exc)
         return True
 
     except Exception as exc:
         final = job["attempt"] >= job["max_attempts"]
-        await job_service.fail(job, code="media.processing_failed", message=str(exc))
+        if not await job_service.fail(
+            job, code="media.processing_failed", message=str(exc)
+        ):
+            return True
         await _sync_asset_failure(job, final)
         logger.exception("media processing failed for job %s", job["id"])
         return True

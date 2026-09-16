@@ -1,10 +1,15 @@
 """Ensure indexes on startup."""
+
 from db.mongo import get_db
 
 
 async def _ensure_partial_unique(db, collection: str, field: str) -> None:
     info = await db[collection].index_information()
     name = f"{field}_1"
+    if name in info and info[name].get("partialFilterExpression") == {
+        field: {"$type": "string"}
+    }:
+        return
     if name in info:
         await db[collection].drop_index(name)
     await db[collection].create_index(
@@ -26,15 +31,23 @@ async def ensure_indexes() -> None:
     await db.sessions.create_index("expires_at", expireAfterSeconds=0)
 
     await db.projects.create_index("user_id")
-    await db.projects.create_index([("user_id", 1), ("archived", 1), ("updated_at", -1)])
+    await db.projects.create_index(
+        [("user_id", 1), ("archived", 1), ("updated_at", -1)]
+    )
     await db.projects.create_index("status")
 
     await db.project_states.create_index("project_id", unique=True)
     await db.project_states.create_index([("user_id", 1), ("updated_at", -1)])
-    await db.edit_operations.create_index([("project_id", 1), ("to_version", 1)], unique=True)
+    await db.edit_operations.create_index(
+        [("project_id", 1), ("to_version", 1)], unique=True
+    )
     await db.edit_operations.create_index([("user_id", 1), ("created_at", -1)])
-    await db.project_state_versions.create_index([("project_id", 1), ("version", 1)], unique=True)
-    await db.project_state_versions.create_index([("user_id", 1), ("project_id", 1), ("version", -1)])
+    await db.project_state_versions.create_index(
+        [("project_id", 1), ("version", 1)], unique=True
+    )
+    await db.project_state_versions.create_index(
+        [("user_id", 1), ("project_id", 1), ("version", -1)]
+    )
 
     await db.assets.create_index("user_id")
     await db.assets.create_index("project_id")
@@ -45,8 +58,20 @@ async def ensure_indexes() -> None:
     await db.jobs.create_index([("type", 1), ("status", 1), ("created_at", 1)])
     await db.jobs.create_index([("user_id", 1), ("created_at", -1)])
     await db.jobs.create_index("asset_id")
+    await db.jobs.create_index(
+        [("project_id", 1), ("type", 1)],
+        name="one_active_pipeline",
+        unique=True,
+        partialFilterExpression={
+            "type": "create_for_me",
+            "status": {"$in": ["queued", "running"]},
+        },
+    )
+    await db.password_resets.create_index("expires_at", expireAfterSeconds=0)
 
-    await db.exports.create_index([("user_id", 1), ("project_id", 1), ("created_at", -1)])
+    await db.exports.create_index(
+        [("user_id", 1), ("project_id", 1), ("created_at", -1)]
+    )
     await db.exports.create_index("job_id", unique=True)
 
     await db.media_intelligence.create_index(

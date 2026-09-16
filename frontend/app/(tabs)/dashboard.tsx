@@ -167,7 +167,7 @@ export default function Dashboard() {
             <View style={{ flex: 1, marginLeft: spacing.md }}>
               <Text style={[typography.bodyMed, { color: colors.textHigh }]}>Tip</Text>
               <Text style={[typography.caption, { color: colors.textMedium, marginTop: 2 }]}>
-                Upload your first asset to unlock personalized AI suggestions.
+                Open a project to analyze clips, review AI edits, and export your video.
               </Text>
             </View>
           </View>

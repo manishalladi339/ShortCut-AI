@@ -1,4 +1,5 @@
 """Media-intelligence API."""
+
 from __future__ import annotations
 
 import uuid
@@ -22,17 +23,29 @@ async def _owned_ready_asset(asset_id: str, user_id: str) -> dict:
     if not asset:
         raise HTTPException(
             status_code=404,
-            detail={"error": {"code": "resource.not_found", "message": "Asset not found"}},
+            detail={
+                "error": {"code": "resource.not_found", "message": "Asset not found"}
+            },
         )
     if asset.get("processing_status") != "ready":
         raise HTTPException(
             status_code=409,
-            detail={"error": {"code": "intelligence.asset_not_ready", "message": "Asset is still processing"}},
+            detail={
+                "error": {
+                    "code": "intelligence.asset_not_ready",
+                    "message": "Asset is still processing",
+                }
+            },
         )
     if asset.get("kind") not in {"video", "audio"}:
         raise HTTPException(
             status_code=422,
-            detail={"error": {"code": "intelligence.unsupported_asset", "message": "Only video/audio assets are supported"}},
+            detail={
+                "error": {
+                    "code": "intelligence.unsupported_asset",
+                    "message": "Only video/audio assets are supported",
+                }
+            },
         )
     return asset
 
@@ -50,7 +63,11 @@ async def analyze_asset(
     asset = await _owned_ready_asset(asset_id, user["id"])
 
     existing = await db.media_intelligence.find_one(
-        {"asset_id": asset_id, "user_id": user["id"], "status": {"$in": ["queued", "running"]}},
+        {
+            "asset_id": asset_id,
+            "user_id": user["id"],
+            "status": {"$in": ["queued", "running"]},
+        },
         {"_id": 0},
     )
     if existing:
@@ -62,20 +79,25 @@ async def analyze_asset(
 
     now = utc_now()
     intelligence_id = str(uuid.uuid4())
-    job = await job_service.enqueue(
-        user_id=user["id"],
-        project_id=asset.get("project_id"),
-        asset_id=asset_id,
-        job_type=JobType.media_intelligence,
-        payload={"intelligence_id": intelligence_id},
-        max_attempts=2,
-    )
+    job_id = str(uuid.uuid4())
+
+    async def enqueue_analysis():
+        return await job_service.enqueue(
+            user_id=user["id"],
+            project_id=asset.get("project_id"),
+            asset_id=asset_id,
+            job_type=JobType.media_intelligence,
+            payload={"intelligence_id": intelligence_id},
+            max_attempts=2,
+            job_id=job_id,
+        )
+
     doc = {
         "id": intelligence_id,
         "asset_id": asset_id,
         "user_id": user["id"],
         "project_id": asset.get("project_id"),
-        "job_id": job["id"],
+        "job_id": job_id,
         "status": "queued",
         "language": None,
         "transcript_text": "",
@@ -89,8 +111,9 @@ async def analyze_asset(
         "updated_at": now,
     }
     await db.media_intelligence.insert_one(doc)
+    await enqueue_analysis()
     return AnalyzeAssetOut(
-        job_id=job["id"],
+        job_id=job_id,
         intelligence_id=intelligence_id,
         status="queued",
     )
@@ -110,6 +133,11 @@ async def get_asset_intelligence(
     if not doc:
         raise HTTPException(
             status_code=404,
-            detail={"error": {"code": "intelligence.not_found", "message": "No analysis exists for this asset"}},
+            detail={
+                "error": {
+                    "code": "intelligence.not_found",
+                    "message": "No analysis exists for this asset",
+                }
+            },
         )
     return MediaIntelligenceOut(**doc)

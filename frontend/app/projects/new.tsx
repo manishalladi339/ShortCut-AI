@@ -109,7 +109,7 @@ export default function NewProject() {
                     style={[styles.modeCard, active && styles.modeCardActive]}
                     testID={`new-project-mode-${m.value}`}
                   >
-                    <View style={styles.modeIcon(active)}>
+                    <View style={[styles.modeIcon, {backgroundColor: active ? colors.primaryMuted : colors.surface2}]}>
                       <Ionicons
                         name={m.value === "create_for_me" ? "sparkles" : "options"}
                         color={active ? colors.primary : colors.textMedium}
@@ -227,12 +227,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   modeCardActive: { borderColor: colors.primary, backgroundColor: "rgba(255,68,51,0.06)" },
-  modeIcon: (active: boolean) => ({
+  modeIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: active ? colors.primaryMuted : colors.surface2,
+    backgroundColor: colors.surface2,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-  }),
+  },
 });

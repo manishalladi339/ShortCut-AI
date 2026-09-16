@@ -1,4 +1,5 @@
 """Media-intelligence worker: audio, speech, scenes, vision and embeddings."""
+
 from __future__ import annotations
 
 import argparse
@@ -25,7 +26,9 @@ from services.storage import materialize
 from services.transcription import get_transcription_provider
 from services.vision import get_vision_provider
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s"
+)
 logger = logging.getLogger("shortcut.intelligence-worker")
 
 
@@ -34,7 +37,14 @@ def _normalize_words(words: list[dict]) -> list[dict]:
     for item in words:
         text = str(item.get("word") or item.get("text") or "").strip()
         if text:
-            normalized.append({"start": float(item.get("start", 0.0)), "end": float(item.get("end", item.get("start", 0.0))), "text": text, "speaker": item.get("speaker")})
+            normalized.append(
+                {
+                    "start": float(item.get("start", 0.0)),
+                    "end": float(item.get("end", item.get("start", 0.0))),
+                    "text": text,
+                    "speaker": item.get("speaker"),
+                }
+            )
     return normalized
 
 
@@ -43,23 +53,38 @@ def _normalize_segments(segments: list[dict]) -> list[dict]:
     for item in segments:
         text = str(item.get("text") or "").strip()
         if text:
-            normalized.append({"start": float(item.get("start", 0.0)), "end": float(item.get("end", item.get("start", 0.0))), "text": text, "speaker": item.get("speaker")})
+            normalized.append(
+                {
+                    "start": float(item.get("start", 0.0)),
+                    "end": float(item.get("end", item.get("start", 0.0))),
+                    "text": text,
+                    "speaker": item.get("speaker"),
+                }
+            )
     return normalized
 
 
 async def process_one() -> bool:
     from core.config import settings
+
     job = await job_service.claim_next(JobType.media_intelligence)
     if not job:
         return False
     db = get_db()
     intelligence_id = job.get("payload", {}).get("intelligence_id")
     try:
-        record = await db.media_intelligence.find_one({"id": intelligence_id, "user_id": job["user_id"]}, {"_id": 0})
-        asset = await db.assets.find_one({"id": job["asset_id"], "user_id": job["user_id"]}, {"_id": 0})
+        record = await db.media_intelligence.find_one(
+            {"id": intelligence_id, "user_id": job["user_id"]}, {"_id": 0}
+        )
+        asset = await db.assets.find_one(
+            {"id": job["asset_id"], "user_id": job["user_id"]}, {"_id": 0}
+        )
         if not record or not asset:
             raise RuntimeError("analysis record or asset no longer exists")
-        await db.media_intelligence.update_one({"id": intelligence_id}, {"$set": {"status": "running", "updated_at": utc_now()}})
+        await db.media_intelligence.update_one(
+            {"id": intelligence_id},
+            {"$set": {"status": "running", "updated_at": utc_now()}},
+        )
 
         with TemporaryDirectory(prefix="shortcut-intelligence-") as tmp:
             root = Path(tmp)
@@ -100,42 +125,110 @@ async def process_one() -> bool:
                     await job_service.set_progress(job["id"], 55)
                     scenes = detect_scenes(source, asset.get("duration_sec"))
                     await job_service.set_progress(job["id"], 65)
-                    frames = extract_frames(source, root / "frames", scenes=scenes, duration_sec=asset.get("duration_sec"), max_frames=settings.MAX_VISION_FRAMES)
+                    frames = extract_frames(
+                        source,
+                        root / "frames",
+                        scenes=scenes,
+                        duration_sec=asset.get("duration_sec"),
+                        max_frames=settings.MAX_VISION_FRAMES,
+                    )
                     if frames:
-                        visual_observations = await get_vision_provider().analyze_frames(frames)
+                        visual_observations = (
+                            await get_vision_provider().analyze_frames(frames)
+                        )
 
         words = _normalize_words(transcript.get("words") or [])
         segments = _normalize_segments(transcript.get("segments") or [])
-        semantic_units = build_semantic_units(segments=segments, scenes=scenes, split_on_speaker=True)
+        semantic_units = build_semantic_units(
+            segments=segments, scenes=scenes, split_on_speaker=True
+        )
         await job_service.set_progress(job["id"], 80)
         embedder = get_embedding_provider()
-        semantic_vectors = await embedder.embed([unit["text"] for unit in semantic_units]) if semantic_units else []
+        semantic_vectors = (
+            await embedder.embed([unit["text"] for unit in semantic_units])
+            if semantic_units
+            else []
+        )
         visual_texts = [visual_text(item) for item in visual_observations]
         visual_vectors = await embedder.embed(visual_texts) if visual_texts else []
 
         result = {
-            "language": transcript.get("language"), "transcript_text": str(transcript.get("text") or "").strip(),
-            "words": words, "segments": segments, "speakers": transcript.get("speakers") or [], "diarized": bool(transcript.get("diarized")),
-            "scenes": scenes, "silences": silences, "rhythm_events": rhythm_events, "beat_grid": beat_grid, "visual_observations": visual_observations, "visual_vectors": visual_vectors,
-            "semantic_units": semantic_units, "semantic_vectors": semantic_vectors, "embedding_model": settings.EMBEDDING_MODEL,
-            "provider": transcript.get("provider"), "model": transcript.get("model"),
+            "language": transcript.get("language"),
+            "transcript_text": str(transcript.get("text") or "").strip(),
+            "words": words,
+            "segments": segments,
+            "speakers": transcript.get("speakers") or [],
+            "diarized": bool(transcript.get("diarized")),
+            "scenes": scenes,
+            "silences": silences,
+            "rhythm_events": rhythm_events,
+            "beat_grid": beat_grid,
+            "visual_observations": visual_observations,
+            "visual_vectors": visual_vectors,
+            "semantic_units": semantic_units,
+            "semantic_vectors": semantic_vectors,
+            "embedding_model": settings.EMBEDDING_MODEL,
+            "provider": transcript.get("provider"),
+            "model": transcript.get("model"),
         }
+        await job_service.assert_claim(job)
         now = utc_now()
-        await db.media_intelligence.update_one({"id": intelligence_id}, {"$set": {**result, "status": "completed", "updated_at": now}})
-        await db.assets.update_one({"id": asset["id"]}, {"$set": {"language": result["language"], "intelligence_status": "completed", "intelligence_id": intelligence_id, "updated_at": now}})
-        await job_service.succeed(job["id"], {"intelligence_id": intelligence_id, "word_count": len(words), "segment_count": len(segments), "scene_count": len(scenes), "silence_count": len(silences), "rhythm_event_count": len(rhythm_events), "beat_grid_confidence": (beat_grid or {}).get("confidence"), "speaker_count": len(transcript.get("speakers") or []), "visual_observation_count": len(visual_observations), "visual_embedded_count": len(visual_vectors), "semantic_unit_count": len(semantic_units), "embedded_unit_count": len(semantic_vectors)})
+        await db.media_intelligence.update_one(
+            {"id": intelligence_id},
+            {"$set": {**result, "status": "completed", "updated_at": now}},
+        )
+        await db.assets.update_one(
+            {"id": asset["id"]},
+            {
+                "$set": {
+                    "language": result["language"],
+                    "intelligence_status": "completed",
+                    "intelligence_id": intelligence_id,
+                    "updated_at": now,
+                }
+            },
+        )
+        await job_service.succeed(
+            job["id"],
+            {
+                "intelligence_id": intelligence_id,
+                "word_count": len(words),
+                "segment_count": len(segments),
+                "scene_count": len(scenes),
+                "silence_count": len(silences),
+                "rhythm_event_count": len(rhythm_events),
+                "beat_grid_confidence": (beat_grid or {}).get("confidence"),
+                "speaker_count": len(transcript.get("speakers") or []),
+                "visual_observation_count": len(visual_observations),
+                "visual_embedded_count": len(visual_vectors),
+                "semantic_unit_count": len(semantic_units),
+                "embedded_unit_count": len(semantic_vectors),
+            },
+        )
         return True
     except Exception as exc:
         final = job["attempt"] >= job["max_attempts"]
-        await job_service.fail(job, code="intelligence.failed", message=str(exc))
+        if not await job_service.fail(
+            job, code="intelligence.failed", message=str(exc)
+        ):
+            return True
         if intelligence_id:
-            await db.media_intelligence.update_one({"id": intelligence_id}, {"$set": {"status": "failed" if final else "queued", "updated_at": utc_now()}})
+            await db.media_intelligence.update_one(
+                {"id": intelligence_id},
+                {
+                    "$set": {
+                        "status": "failed" if final else "queued",
+                        "updated_at": utc_now(),
+                    }
+                },
+            )
         logger.exception("media intelligence failed for job %s", job["id"])
         return True
 
 
 async def run_forever() -> None:
     from core.config import settings
+
     while True:
         if not await process_one():
             await asyncio.sleep(settings.WORKER_POLL_INTERVAL_SEC)

@@ -17,9 +17,21 @@ services:
     environment: &backend-env
       MONGO_URL: mongodb://mongo:27017
       DB_NAME: shortcut_ai
-      JWT_SECRET: local-development-secret-change-me
-      APP_PUBLIC_URL: http://localhost:8001
-      STORAGE_BACKEND: local
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-me}
+      APP_ENV: ${APP_ENV:-development}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:8081}
+      FRONTEND_PUBLIC_URL: ${FRONTEND_PUBLIC_URL:-http://localhost:8080}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:-noreply@example.com}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:8080}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
       STUB_STORAGE_DIR: /data/storage
       FFPROBE_PATH: ffprobe
       FFMPEG_PATH: ffmpeg
@@ -34,7 +46,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.openai.com/v1}
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     volumes:
       - shortcut-storage:/data/storage
     depends_on:
@@ -70,6 +82,27 @@ services:
       context: ./backend
     restart: unless-stopped
     command: ["python", "-m", "workers.intelligence_worker"]
+    environment: *backend-env
+    volumes:
+      - shortcut-storage:/data/storage
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  pipeline-worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "workers.pipeline_worker"]
     environment: *backend-env
     volumes:
       - shortcut-storage:/data/storage

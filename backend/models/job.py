@@ -1,4 +1,5 @@
 """Background processing job schemas."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -9,6 +10,7 @@ from pydantic import BaseModel, Field
 
 
 class JobType(str, Enum):
+    create_for_me = "create_for_me"
     media_probe = "media_probe"
     render_export = "render_export"
     media_intelligence = "media_intelligence"

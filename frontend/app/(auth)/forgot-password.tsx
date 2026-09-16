@@ -12,15 +12,17 @@ export default function ForgotPassword() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
 
   async function submit() {
     setBusy(true);
+    setError("");
     try {
       await authApi.forgotPassword(email.trim().toLowerCase());
       setSent(true);
-    } catch {
-      setSent(true); // always show success per security policy
+    } catch (e: any) {
+      setError(e?.message || "Could not request a reset link. Try again.");
     } finally {
       setBusy(false);
     }
@@ -38,6 +40,7 @@ export default function ForgotPassword() {
         <Text style={[typography.body, { color: colors.textMedium, marginBottom: spacing.xxl }]}>
           We&apos;ll send you a link if this email is registered.
         </Text>
+        {error ? <Text accessibilityRole="alert" style={{color: colors.danger}}>{error}</Text> : null}
         {sent ? (
           <View>
             <Text style={[typography.body, { color: colors.success }]} testID="forgot-success">

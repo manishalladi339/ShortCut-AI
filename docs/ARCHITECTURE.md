@@ -101,25 +101,6 @@ Rendering stages:
 
 ## Current implementation status
 
-Implemented in the existing codebase:
-- email/JWT authentication
-- project CRUD and quotas
-- media asset records and upload contract
-- local S3-compatible storage stub
-- backend tests for core APIs
+The release candidate now connects the Expo editor to the existing ingestion, analysis, planning, canonical state, and FFmpeg export services. A dedicated Mongo-backed pipeline worker orchestrates Create For Me; Create With Me uses reviewed plans and deterministic manual operations. Local storage uses expiring signed links, with an S3 adapter available for deployment.
 
-Added in this architecture foundation:
-- canonical ProjectState schemas
-- sequence/track/clip timeline model
-- optimistic state versioning
-- deterministic edit-operation endpoint
-- project-state persistence and indexes
-
-Not yet implemented:
-- production S3 adapter
-- background analysis workers
-- transcription/media intelligence
-- LLM orchestration
-- renderer
-- editable mobile timeline connected to ProjectState
-- AI evaluation system
+See [RELEASE_READINESS.md](RELEASE_READINESS.md) for verified scope and remaining acceptance gates, and [DEPLOYMENT.md](DEPLOYMENT.md) for service configuration. Earlier milestone documents describe the longer-term architecture and must not be read as an assertion that every future feature is implemented.

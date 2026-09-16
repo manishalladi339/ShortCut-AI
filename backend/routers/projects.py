@@ -1,4 +1,5 @@
 """Project CRUD router."""
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -80,7 +81,9 @@ async def continue_editing(user: dict = Depends(get_current_user)) -> list[Proje
             {
                 "user_id": user["id"],
                 "archived": False,
-                "status": {"$in": [ProjectStatus.draft.value, ProjectStatus.processing.value]},
+                "status": {
+                    "$in": [ProjectStatus.draft.value, ProjectStatus.processing.value]
+                },
             },
             {"_id": 0},
         )
@@ -91,38 +94,73 @@ async def continue_editing(user: dict = Depends(get_current_user)) -> list[Proje
     return [_to_out(d) for d in docs]
 
 
-@router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
-async def create_project(body: ProjectCreate, user: dict = Depends(get_current_user)) -> ProjectOut:
+async def _reserve_quota(user_id: str) -> None:
     db = get_db()
-    # quota check
-    limit = user.get("monthly_project_limit", 3)
-    count = user.get("monthly_project_count", 0)
-    if limit != -1 and count >= limit:
+    month = utc_now().strftime("%Y-%m")
+    await db.users.update_one(
+        {"id": user_id, "quota_month": {"$ne": month}},
+        {"$set": {"quota_month": month, "monthly_project_count": 0}},
+    )
+    result = await db.users.update_one(
+        {
+            "id": user_id,
+            "$or": [
+                {"monthly_project_limit": -1},
+                {
+                    "$expr": {
+                        "$lt": [
+                            {"$ifNull": ["$monthly_project_count", 0]},
+                            {"$ifNull": ["$monthly_project_limit", 3]},
+                        ]
+                    }
+                },
+            ],
+        },
+        {"$inc": {"monthly_project_count": 1}, "$set": {"updated_at": utc_now()}},
+    )
+    if result.modified_count != 1:
         raise HTTPException(
             status_code=402,
             detail={
                 "error": {
                     "code": "quota.exceeded",
-                    "message": f"Free tier limit of {limit} projects/month reached",
+                    "message": "Monthly project limit reached",
                 }
             },
         )
+
+
+@router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
+async def create_project(
+    body: ProjectCreate, user: dict = Depends(get_current_user)
+) -> ProjectOut:
+    db = get_db()
+    await _reserve_quota(user["id"])
     doc = _new_project_doc(user["id"], body)
-    await db.projects.insert_one(doc)
-    await db.users.update_one(
-        {"id": user["id"]}, {"$inc": {"monthly_project_count": 1}, "$set": {"updated_at": utc_now()}}
-    )
+    try:
+        await db.projects.insert_one(doc)
+    except Exception:
+        await db.users.update_one(
+            {"id": user["id"]}, {"$inc": {"monthly_project_count": -1}}
+        )
+        raise
     return _to_out(doc)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
-async def get_project(project_id: str, user: dict = Depends(get_current_user)) -> ProjectOut:
+async def get_project(
+    project_id: str, user: dict = Depends(get_current_user)
+) -> ProjectOut:
     db = get_db()
-    doc = await db.projects.find_one({"id": project_id, "user_id": user["id"]}, {"_id": 0})
+    doc = await db.projects.find_one(
+        {"id": project_id, "user_id": user["id"]}, {"_id": 0}
+    )
     if not doc:
         raise HTTPException(
             status_code=404,
-            detail={"error": {"code": "resource.not_found", "message": "Project not found"}},
+            detail={
+                "error": {"code": "resource.not_found", "message": "Project not found"}
+            },
         )
     return _to_out(doc)
 
@@ -149,21 +187,34 @@ async def update_project(
     if result.matched_count == 0:
         raise HTTPException(
             status_code=404,
-            detail={"error": {"code": "resource.not_found", "message": "Project not found"}},
+            detail={
+                "error": {"code": "resource.not_found", "message": "Project not found"}
+            },
         )
     doc = await db.projects.find_one({"id": project_id}, {"_id": 0})
     return _to_out(doc)
 
 
-@router.post("/{project_id}/duplicate", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
-async def duplicate_project(project_id: str, user: dict = Depends(get_current_user)) -> ProjectOut:
+@router.post(
+    "/{project_id}/duplicate",
+    response_model=ProjectOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def duplicate_project(
+    project_id: str, user: dict = Depends(get_current_user)
+) -> ProjectOut:
     db = get_db()
-    src = await db.projects.find_one({"id": project_id, "user_id": user["id"]}, {"_id": 0})
+    src = await db.projects.find_one(
+        {"id": project_id, "user_id": user["id"]}, {"_id": 0}
+    )
     if not src:
         raise HTTPException(
             status_code=404,
-            detail={"error": {"code": "resource.not_found", "message": "Project not found"}},
+            detail={
+                "error": {"code": "resource.not_found", "message": "Project not found"}
+            },
         )
+    await _reserve_quota(user["id"])
     now = utc_now()
     copy = {
         **src,
@@ -178,34 +229,69 @@ async def duplicate_project(project_id: str, user: dict = Depends(get_current_us
         "updated_at": now,
     }
     await db.projects.insert_one(copy)
+    state = await db.project_states.find_one(
+        {"project_id": project_id, "user_id": user["id"]}, {"_id": 0}
+    )
+    if state:
+        state.update(project_id=copy["id"], version=1, created_at=now, updated_at=now)
+        await db.project_states.insert_one(state)
     return _to_out(copy)
 
 
 @router.post("/{project_id}/archive", response_model=ProjectOut)
-async def archive_project(project_id: str, user: dict = Depends(get_current_user)) -> ProjectOut:
+async def archive_project(
+    project_id: str, user: dict = Depends(get_current_user)
+) -> ProjectOut:
     db = get_db()
     result = await db.projects.update_one(
         {"id": project_id, "user_id": user["id"]},
-        {"$set": {"archived": True, "status": ProjectStatus.archived.value, "updated_at": utc_now()}},
+        {
+            "$set": {
+                "archived": True,
+                "status": ProjectStatus.archived.value,
+                "updated_at": utc_now(),
+            }
+        },
     )
     if result.matched_count == 0:
         raise HTTPException(
             status_code=404,
-            detail={"error": {"code": "resource.not_found", "message": "Project not found"}},
+            detail={
+                "error": {"code": "resource.not_found", "message": "Project not found"}
+            },
         )
     doc = await db.projects.find_one({"id": project_id}, {"_id": 0})
     return _to_out(doc)
 
 
 @router.delete("/{project_id}")
-async def delete_project(project_id: str, user: dict = Depends(get_current_user)) -> dict:
+async def delete_project(
+    project_id: str, user: dict = Depends(get_current_user)
+) -> dict:
     db = get_db()
     result = await db.projects.delete_one({"id": project_id, "user_id": user["id"]})
     if result.deleted_count == 0:
         raise HTTPException(
             status_code=404,
-            detail={"error": {"code": "resource.not_found", "message": "Project not found"}},
+            detail={
+                "error": {"code": "resource.not_found", "message": "Project not found"}
+            },
         )
-    # Cascade: unlink assets (keep them in library), delete linked clips/jobs (none yet in 2.1).
-    await db.assets.update_many({"project_id": project_id}, {"$set": {"project_id": None}})
+    for collection in (
+        "project_states",
+        "project_state_versions",
+        "edit_operations",
+        "ai_edit_plans",
+        "ai_plan_feedback",
+        "jobs",
+        "exports",
+        "media_intelligence",
+    ):
+        await db[collection].delete_many(
+            {"project_id": project_id, "user_id": user["id"]}
+        )
+    # Keep uploaded assets in the owner's library.
+    await db.assets.update_many(
+        {"project_id": project_id}, {"$set": {"project_id": None}}
+    )
     return {"ok": True}

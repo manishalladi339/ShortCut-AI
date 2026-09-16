@@ -1,4 +1,5 @@
 """Deterministic render-plan schemas."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -48,6 +49,7 @@ class RenderClip(BaseModel):
 
 
 class RenderPlan(BaseModel):
+    watermark: bool = False
     project_id: str
     project_state_version: int = Field(ge=1)
     sequence_id: str

@@ -1,4 +1,5 @@
 """Backend configuration loaded from .env."""
+
 import os
 from pathlib import Path
 
@@ -19,6 +20,28 @@ class Settings:
 
     APP_PUBLIC_URL: str = os.environ.get("APP_PUBLIC_URL", "http://localhost:8001")
 
+    APP_ENV: str = os.environ.get("APP_ENV", "development")
+    CORS_ORIGINS: list[str] = [
+        x.strip()
+        for x in os.environ.get(
+            "CORS_ORIGINS", "http://localhost:8081,http://localhost:8080"
+        ).split(",")
+        if x.strip()
+    ]
+    MAX_UPLOAD_BYTES: int = int(
+        os.environ.get("MAX_UPLOAD_BYTES", str(512 * 1024 * 1024))
+    )
+
+    FRONTEND_PUBLIC_URL: str = os.environ.get(
+        "FRONTEND_PUBLIC_URL", "http://localhost:8081"
+    )
+    SMTP_HOST: str = os.environ.get("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.environ.get("SMTP_PORT", "587"))
+    SMTP_FROM: str = os.environ.get("SMTP_FROM", "noreply@example.com")
+    SMTP_USERNAME: str = os.environ.get("SMTP_USERNAME", "")
+    SMTP_PASSWORD: str = os.environ.get("SMTP_PASSWORD", "")
+    SMTP_STARTTLS: bool = os.environ.get("SMTP_STARTTLS", "true").lower() == "true"
+
     # Storage
     STORAGE_BACKEND: str = os.environ.get(
         "STORAGE_BACKEND", os.environ.get("S3_BACKEND", "local")
@@ -32,36 +55,30 @@ class Settings:
     FFPROBE_PATH: str = os.environ.get("FFPROBE_PATH", "ffprobe")
     FFMPEG_PATH: str = os.environ.get("FFMPEG_PATH", "ffmpeg")
     MEDIA_PROBE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_PROBE_TIMEOUT_SEC", "30"))
-    MEDIA_DERIVATIVE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_DERIVATIVE_TIMEOUT_SEC", "180"))
+    MEDIA_DERIVATIVE_TIMEOUT_SEC: int = int(
+        os.environ.get("MEDIA_DERIVATIVE_TIMEOUT_SEC", "180")
+    )
     RENDER_TIMEOUT_SEC: int = int(os.environ.get("RENDER_TIMEOUT_SEC", "900"))
-    WORKER_POLL_INTERVAL_SEC: float = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0"))
+    WORKER_POLL_INTERVAL_SEC: float = float(
+        os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0")
+    )
     MEDIA_INTELLIGENCE_TIMEOUT_SEC: int = int(
         os.environ.get("MEDIA_INTELLIGENCE_TIMEOUT_SEC", "900")
     )
     SCENE_DETECTION_THRESHOLD: float = float(
         os.environ.get("SCENE_DETECTION_THRESHOLD", "0.35")
     )
-    SILENCE_NOISE_DB: float = float(
-        os.environ.get("SILENCE_NOISE_DB", "-35")
-    )
+    SILENCE_NOISE_DB: float = float(os.environ.get("SILENCE_NOISE_DB", "-35"))
     SILENCE_MIN_DURATION_SEC: float = float(
         os.environ.get("SILENCE_MIN_DURATION_SEC", "0.35")
     )
     SILENCE_SNAP_WINDOW_SEC: float = float(
         os.environ.get("SILENCE_SNAP_WINDOW_SEC", "0.75")
     )
-    RHYTHM_WINDOW_MS: float = float(
-        os.environ.get("RHYTHM_WINDOW_MS", "50")
-    )
-    RHYTHM_BASELINE_SEC: float = float(
-        os.environ.get("RHYTHM_BASELINE_SEC", "0.4")
-    )
-    RHYTHM_ENERGY_RATIO: float = float(
-        os.environ.get("RHYTHM_ENERGY_RATIO", "1.8")
-    )
-    RHYTHM_MIN_RMS: float = float(
-        os.environ.get("RHYTHM_MIN_RMS", "300")
-    )
+    RHYTHM_WINDOW_MS: float = float(os.environ.get("RHYTHM_WINDOW_MS", "50"))
+    RHYTHM_BASELINE_SEC: float = float(os.environ.get("RHYTHM_BASELINE_SEC", "0.4"))
+    RHYTHM_ENERGY_RATIO: float = float(os.environ.get("RHYTHM_ENERGY_RATIO", "1.8"))
+    RHYTHM_MIN_RMS: float = float(os.environ.get("RHYTHM_MIN_RMS", "300"))
     RHYTHM_MIN_INTERVAL_SEC: float = float(
         os.environ.get("RHYTHM_MIN_INTERVAL_SEC", "0.25")
     )
@@ -75,9 +92,7 @@ class Settings:
     VISION_MODEL: str = os.environ.get("VISION_MODEL", "gpt-4o")
     MAX_VISION_FRAMES: int = int(os.environ.get("MAX_VISION_FRAMES", "8"))
     EMBEDDING_PROVIDER: str = os.environ.get("EMBEDDING_PROVIDER", "openai")
-    EMBEDDING_MODEL: str = os.environ.get(
-        "EMBEDDING_MODEL", "text-embedding-3-small"
-    )
+    EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
     NARRATIVE_PROVIDER: str = os.environ.get("NARRATIVE_PROVIDER", "deterministic")
     NARRATIVE_MODEL: str = os.environ.get("NARRATIVE_MODEL", "gpt-5-mini")
     AI_PLANNER_TIMEOUT_SEC: int = int(os.environ.get("AI_PLANNER_TIMEOUT_SEC", "120"))

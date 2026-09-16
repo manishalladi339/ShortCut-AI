@@ -15,9 +15,11 @@ export interface Asset {
   width: number | null;
   height: number | null;
   storage_type: string;
-  s3_bucket: string;
-  s3_key: string;
-  s3_url: string | null;
+  storage_bucket: string;
+  storage_key: string;
+  download_url: string | null;
+  processing_status: string;
+  processing_job_id: string | null;
   upload_status: UploadStatus;
   is_watermarked: boolean;
   language: string | null;
@@ -30,7 +32,7 @@ export interface PresignResp {
   asset_id: string;
   upload_url: string;
   upload_headers: Record<string, string>;
-  s3_key: string;
+  storage_key: string;
   expires_at: string;
 }
 
@@ -53,8 +55,9 @@ export const assetsApi = {
     id: string,
     body: { duration_sec?: number; width?: number; height?: number } = {},
   ) => api<Asset>(`/assets/${id}/confirm`, { method: "POST", body }),
-  list: (opts: { kind?: AssetKind; project_id?: string; q?: string; tag?: string } = {}) => {
+  list: (opts: { kind?: AssetKind; project_id?: string; q?: string; tag?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams();
+    qs.set("limit", String(opts.limit ?? 100));
     if (opts.kind) qs.set("kind", opts.kind);
     if (opts.project_id) qs.set("project_id", opts.project_id);
     if (opts.q) qs.set("q", opts.q);
@@ -69,16 +72,20 @@ export const assetsApi = {
 };
 
 /** Upload a blob/data to the presigned URL. Returns true on success. */
-export async function uploadBinary(
+export function uploadBinary(
   upload_url: string,
   headers: Record<string, string>,
   data: Blob | ArrayBuffer | Uint8Array,
+  onProgress?: (percent:number)=>void,
 ): Promise<boolean> {
-  const r = await fetch(upload_url, {
-    method: "PUT",
-    headers,
-    // Cast: fetch supports all three runtime types.
-    body: data as BodyInit,
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('PUT',upload_url);xhr.timeout=30*60*1000;
+    Object.entries(headers).forEach(([k,v])=>xhr.setRequestHeader(k,v));
+    xhr.upload.onprogress=(event)=>{if(event.lengthComputable)onProgress?.(Math.round(event.loaded/event.total*100));};
+    xhr.onload=()=>resolve(xhr.status>=200&&xhr.status<300);
+    xhr.onerror=()=>reject(new Error('Upload connection failed. Please try uploading again.'));
+    xhr.ontimeout=()=>reject(new Error('Upload timed out. Please try a smaller file.'));
+    xhr.send(data as XMLHttpRequestBodyInit);
   });
-  return r.ok;
 }

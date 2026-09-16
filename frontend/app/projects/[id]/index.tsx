@@ -1,9 +1,9 @@
+import { Alert } from "@/src/utils/alerts";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -84,6 +84,8 @@ export default function ProjectDetail() {
     ]);
   }
 
+  if (!loading && !project) return <SafeAreaView style={styles.root}><Text style={{color: colors.textHigh, padding: 24}}>Could not load this project.</Text><Button label="Try again" onPress={load}/><Button label="Back" onPress={() => router.back()}/></SafeAreaView>;
+
   if (loading || !project) {
     return (
       <SafeAreaView style={styles.root} edges={["top"]}>
@@ -139,21 +141,9 @@ export default function ProjectDetail() {
             onPress={() => router.push({ pathname: "/library", params: { project_id: project.id } })}
             testID="project-upload-asset-button"
           />
-          {project.creation_mode === "create_for_me" ? (
-            <Button
-              label="Run AI Pipeline (Phase 2.2)"
-              variant="secondary"
-              onPress={() => Alert.alert("Coming soon", "The Create For Me pipeline ships in Phase 2.2.")}
-              testID="project-run-pipeline-button"
-            />
-          ) : (
-            <Button
-              label="Open AI Editor (Phase 2.3)"
-              variant="secondary"
-              onPress={() => Alert.alert("Coming soon", "Create With Me ships in Phase 2.3.")}
-              testID="project-open-editor-button"
-            />
-          )}
+          <Button label="Open editing studio" variant="ai"
+            onPress={() => router.push(`/projects/${project.id}/editor` as any)}
+            testID="project-open-editor-button" />
         </View>
 
         <View style={{ marginTop: spacing.xl, gap: spacing.md }}>

@@ -1,7 +1,7 @@
 /** Minimal API client. Bearer token attached when present. */
 import { storage } from "@/src/utils/storage";
 
-const BASE = `${process.env.EXPO_PUBLIC_BACKEND_URL ?? ""}/api/v1`;
+const BASE = `${(process.env.EXPO_PUBLIC_BACKEND_URL ?? "").replace(/\/$/, "")}/api/v1`;
 
 export const TOKEN_KEY = "shortcut.access_token";
 export const REFRESH_KEY = "shortcut.refresh_token";
@@ -22,7 +22,13 @@ export async function clearTokens(): Promise<void> {
   await storage.secureRemove(REFRESH_KEY);
 }
 
+let refreshing: Promise<boolean> | null = null;
 async function refreshOnce(): Promise<boolean> {
+  if (!refreshing) refreshing = performRefresh().finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+async function performRefresh(): Promise<boolean> {
   const refresh = await storage.secureGet(REFRESH_KEY, null as string | null);
   if (!refresh) return false;
   try {
@@ -69,9 +75,12 @@ export async function api<T>(
   if (raw) return (await r.text()) as unknown as T;
 
   const text = await r.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: any = {};
+  try { data = text ? JSON.parse(text) : {}; } catch {
+    throw { code: "invalid_response", message: "The server returned an unreadable response. Please try again." };
+  }
   if (!r.ok) {
-    const err: ApiError = data?.error ?? { code: "http_error", message: r.statusText };
+    const err: ApiError = data?.error ?? { code: "http_error", message: Array.isArray(data?.detail) ? data.detail.map((d: any) => d.msg).join("; ") : (data?.detail ?? r.statusText) };
     throw err;
   }
   return data as T;

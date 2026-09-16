@@ -86,3 +86,7 @@ android-sdk/
 # Local app data
 memory/test_credentials.md
 agenthub/agents/youtube/db
+
+# Share configuration templates, never credentials
+!.env.example
+!**/.env.example

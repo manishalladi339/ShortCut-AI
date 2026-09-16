@@ -1,4 +1,5 @@
 """Mongo client + db handle (singleton)."""
+
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from core.config import settings
@@ -22,7 +23,8 @@ def get_db():
 
 
 async def close():
-    global _client
+    global _client, _db
+    _db = None
     if _client is not None:
         _client.close()
         _client = None

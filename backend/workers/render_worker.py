@@ -1,4 +1,5 @@
 """Render worker for queued export jobs."""
+
 from __future__ import annotations
 
 import argparse
@@ -17,7 +18,9 @@ from services.media_probe import probe
 from services.render_executor import execute
 from services.storage import get_storage
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s"
+)
 logger = logging.getLogger("shortcut.render-worker")
 
 
@@ -60,7 +63,10 @@ async def process_one() -> bool:
                     "render QC failed: duration mismatch "
                     f"(expected {expected_duration:.3f}s, got {actual_duration:.3f}s)"
                 )
-            if metadata.get("width") != plan.width or metadata.get("height") != plan.height:
+            if (
+                metadata.get("width") != plan.width
+                or metadata.get("height") != plan.height
+            ):
                 raise RuntimeError(
                     "render QC failed: frame size mismatch "
                     f"(expected {plan.width}x{plan.height}, "
@@ -75,11 +81,10 @@ async def process_one() -> bool:
                 f"users/{job['user_id']}/exports/{job['project_id']}/"
                 f"{export_id}.mp4"
             )
-            get_storage().upload_file(
-                storage_key, output, content_type="video/mp4"
-            )
+            get_storage().upload_file(storage_key, output, content_type="video/mp4")
 
         duration_sec = float(metadata.get("duration_sec") or result["duration_sec"])
+        await job_service.assert_claim(job)
         now = utc_now()
         await db.exports.update_one(
             {"id": export_id},
@@ -107,7 +112,8 @@ async def process_one() -> bool:
 
     except Exception as exc:
         final = job["attempt"] >= job["max_attempts"]
-        await job_service.fail(job, code="render.failed", message=str(exc))
+        if not await job_service.fail(job, code="render.failed", message=str(exc)):
+            return True
         if export_id:
             await db.exports.update_one(
                 {"id": export_id},

@@ -1,7 +1,10 @@
 """Provider abstraction for speech transcription and optional diarization."""
+
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
+import wave
 from typing import Protocol
 
 import httpx
@@ -18,7 +21,65 @@ class TranscriptionProvider(Protocol):
 
 
 class OpenAITranscriptionProvider:
+    CHUNK_SECONDS = 600
+
     async def transcribe(self, audio_path: Path) -> dict:
+        # Workers extract mono 16 kHz PCM. Ten-minute WAV chunks stay below
+        # the provider upload limit and preserve absolute source timestamps.
+        with wave.open(str(audio_path), "rb") as source:
+            rate = source.getframerate()
+            chunk_frames = int(rate * self.CHUNK_SECONDS)
+            if source.getnframes() <= chunk_frames:
+                return await self._transcribe_chunk(audio_path)
+            merged = {
+                "text": "",
+                "words": [],
+                "segments": [],
+                "speakers": [],
+                "diarized": False,
+                "provider": "openai-compatible",
+                "model": settings.TRANSCRIPTION_MODEL,
+                "language": None,
+            }
+            texts = []
+            with TemporaryDirectory(prefix="shortcut-speech-") as tmp:
+                index = 0
+                while True:
+                    offset = source.tell() / rate
+                    pcm = source.readframes(chunk_frames)
+                    if not pcm:
+                        break
+                    path = Path(tmp) / f"part-{index}.wav"
+                    with wave.open(str(path), "wb") as output:
+                        output.setparams(source.getparams())
+                        output.writeframes(pcm)
+                    part = await self._transcribe_chunk(path)
+                    texts.append(part.get("text", ""))
+                    merged["language"] = merged["language"] or part.get("language")
+                    merged["diarized"] = merged["diarized"] or part.get(
+                        "diarized", False
+                    )
+                    for key in ("words", "segments"):
+                        for row in part.get(key, []):
+                            row = {
+                                **row,
+                                "start": row.get("start", 0) + offset,
+                                "end": row.get("end", 0) + offset,
+                            }
+                            if row.get("speaker") is not None:
+                                # Diarization IDs are local to each provider request.
+                                row["speaker"] = f"part{index+1}:{row['speaker']}"
+                            merged[key].append(row)
+                    merged["speakers"].extend(
+                        f"part{index+1}:{speaker}"
+                        for speaker in part.get("speakers", [])
+                    )
+                    path.unlink()
+                    index += 1
+            merged["text"] = " ".join(texts).strip()
+            return merged
+
+    async def _transcribe_chunk(self, audio_path: Path) -> dict:
         if not settings.OPENAI_API_KEY:
             raise TranscriptionError("OPENAI_API_KEY is required for transcription")
 

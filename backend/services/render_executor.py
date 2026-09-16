@@ -13,9 +13,11 @@ This executor supports:
 Unsupported effect metadata still fails explicitly at higher layers rather than
 being silently ignored.
 """
+
 from __future__ import annotations
 
 import math
+import shutil
 import subprocess
 from contextlib import ExitStack
 from pathlib import Path
@@ -79,10 +81,7 @@ def _is_speech_sidechain_source(clip) -> bool:
         return False
     if clip.track_kind == "video":
         return bool(clip.metadata.get("_asset_audio_codec"))
-    return bool(
-        clip.metadata.get("speech_source")
-        or clip.metadata.get("voiceover")
-    )
+    return bool(clip.metadata.get("speech_source") or clip.metadata.get("voiceover"))
 
 
 def _sidechain_options(ducking) -> str:
@@ -112,7 +111,9 @@ def _run(command: list[str]) -> None:
         raise RenderExecutionError("render timed out") from exc
 
     if completed.returncode != 0:
-        raise RenderExecutionError((completed.stderr or "ffmpeg failed").strip()[-6000:])
+        raise RenderExecutionError(
+            (completed.stderr or "ffmpeg failed").strip()[-6000:]
+        )
 
 
 def _srt_time(seconds: float) -> str:
@@ -195,12 +196,16 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
         with ExitStack() as stack:
             for clip in plan.clips:
                 suffix = Path(clip.source_storage_key).suffix
-                source = stack.enter_context(materialize(clip.source_storage_key, suffix=suffix))
+                source = stack.enter_context(
+                    materialize(clip.source_storage_key, suffix=suffix)
+                )
                 input_index = 2 + len(clip_input_index)
                 clip_input_index[clip.clip_id] = input_index
 
                 if clip.metadata.get("_asset_kind") == "image":
-                    command.extend(["-loop", "1", "-framerate", "30", "-i", str(source)])
+                    command.extend(
+                        ["-loop", "1", "-framerate", "30", "-i", str(source)]
+                    )
                 else:
                     command.extend(["-i", str(source)])
 
@@ -210,16 +215,22 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
             for idx, clip in enumerate(ordered_visuals):
                 input_index = clip_input_index[clip.clip_id]
                 source_start = _ticks_to_seconds(
-                    clip.source_start, plan.timebase_numerator, plan.timebase_denominator
+                    clip.source_start,
+                    plan.timebase_numerator,
+                    plan.timebase_denominator,
                 )
                 source_duration = _ticks_to_seconds(
-                    clip.source_duration, plan.timebase_numerator, plan.timebase_denominator
+                    clip.source_duration,
+                    plan.timebase_numerator,
+                    plan.timebase_denominator,
                 )
                 target_duration = _ticks_to_seconds(
                     clip.duration, plan.timebase_numerator, plan.timebase_denominator
                 )
                 timeline_start = _ticks_to_seconds(
-                    clip.timeline_start, plan.timebase_numerator, plan.timebase_denominator
+                    clip.timeline_start,
+                    plan.timebase_numerator,
+                    plan.timebase_denominator,
                 )
 
                 transform = clip.metadata.get("_transform", {})
@@ -290,10 +301,14 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
             for idx, clip in enumerate(audio_clips):
                 input_index = clip_input_index[clip.clip_id]
                 source_start = _ticks_to_seconds(
-                    clip.source_start, plan.timebase_numerator, plan.timebase_denominator
+                    clip.source_start,
+                    plan.timebase_numerator,
+                    plan.timebase_denominator,
                 )
                 source_duration = _ticks_to_seconds(
-                    clip.source_duration, plan.timebase_numerator, plan.timebase_denominator
+                    clip.source_duration,
+                    plan.timebase_numerator,
+                    plan.timebase_denominator,
                 )
                 target_duration = _ticks_to_seconds(
                     clip.duration, plan.timebase_numerator, plan.timebase_denominator
@@ -356,9 +371,7 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
 
             final_audio_labels: list[str] = ["1:a"]
             if ducked_audio and speech_audio:
-                speech_input_labels = "".join(
-                    f"[{label}]" for _, label in speech_audio
-                )
+                speech_input_labels = "".join(f"[{label}]" for _, label in speech_audio)
                 if len(speech_audio) == 1:
                     speech_bus = speech_audio[0][1]
                 else:
@@ -433,9 +446,16 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
             )
             _run(command)
 
+        filters = []
         if plan.captions:
             srt_path = root / "captions.srt"
             _write_srt(plan, srt_path)
+            filters.append(f"subtitles='{_escape_filter_path(srt_path)}'")
+        if plan.watermark:
+            filters.append(
+                "drawtext=text='ShortCut AI':fontcolor=white@0.8:fontsize=h/35:x=w-tw-20:y=h-th-20:box=1:boxcolor=black@0.4:boxborderw=6"
+            )
+        if filters:
             _run(
                 [
                     settings.FFMPEG_PATH,
@@ -443,7 +463,7 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     "-i",
                     str(composed),
                     "-vf",
-                    f"subtitles='{_escape_filter_path(srt_path)}'",
+                    ",".join(filters),
                     "-c:v",
                     "libx264",
                     "-preset",
@@ -460,7 +480,7 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                 ]
             )
         else:
-            output_path.write_bytes(composed.read_bytes())
+            shutil.copyfile(composed, output_path)
 
     if not output_path.is_file() or output_path.stat().st_size == 0:
         raise RenderExecutionError("renderer did not produce a valid output file")

@@ -1,4 +1,5 @@
 """Object-storage abstraction with local and S3 backends."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -7,6 +8,12 @@ from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterator
+
+import hashlib
+import hmac
+import time
+from urllib.parse import quote
+import shutil
 
 import boto3
 from botocore.exceptions import ClientError
@@ -22,7 +29,9 @@ class StorageBackend(ABC):
     def build_key(self, user_id: str, kind: str, asset_id: str, ext: str) -> str: ...
 
     @abstractmethod
-    def presign_upload(self, key: str, ttl_seconds: int = 3600) -> tuple[str, dict, str]: ...
+    def presign_upload(
+        self, key: str, ttl_seconds: int = 3600
+    ) -> tuple[str, dict, str]: ...
 
     @abstractmethod
     def presign_download(self, key: str, ttl_seconds: int = 3600) -> str: ...
@@ -46,7 +55,9 @@ class StorageBackend(ABC):
     def download_to(self, key: str, destination: Path) -> None: ...
 
     @abstractmethod
-    def upload_file(self, key: str, source: Path, content_type: str | None = None) -> None: ...
+    def upload_file(
+        self, key: str, source: Path, content_type: str | None = None
+    ) -> None: ...
 
     @staticmethod
     def _build_key(user_id: str, kind: str, asset_id: str, ext: str) -> str:
@@ -72,16 +83,37 @@ class LocalStorage(StorageBackend):
             raise ValueError("object key escapes storage root")
         return candidate
 
-    def presign_upload(self, key: str, ttl_seconds: int = 3600) -> tuple[str, dict, str]:
+    def signed_url(self, key: str, method: str, ttl_seconds: int) -> str:
+        expires = int(time.time()) + ttl_seconds
+        signature = hmac.new(
+            settings.JWT_SECRET.encode(),
+            f"{method}\n{key}\n{expires}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        return f"{settings.APP_PUBLIC_URL.rstrip('/')}/api/v1/_local-storage/{quote(key, safe='/')}?expires={expires}&signature={signature}"
+
+    def verify_signature(
+        self, key: str, method: str, expires: int, signature: str
+    ) -> bool:
+        expected = hmac.new(
+            settings.JWT_SECRET.encode(),
+            f"{method}\n{key}\n{expires}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        return expires >= int(time.time()) and hmac.compare_digest(expected, signature)
+
+    def presign_upload(
+        self, key: str, ttl_seconds: int = 3600
+    ) -> tuple[str, dict, str]:
         self.local_path(key).parent.mkdir(parents=True, exist_ok=True)
         return (
-            f"{settings.APP_PUBLIC_URL}/api/v1/_local-storage/{key}",
+            self.signed_url(key, "PUT", ttl_seconds),
             {"Content-Type": "application/octet-stream"},
             (utc_now() + timedelta(seconds=ttl_seconds)).isoformat(),
         )
 
     def presign_download(self, key: str, ttl_seconds: int = 3600) -> str:
-        return f"{settings.APP_PUBLIC_URL}/api/v1/_local-storage/{key}"
+        return self.signed_url(key, "GET", ttl_seconds)
 
     def exists(self, key: str) -> bool:
         return self.local_path(key).is_file()
@@ -107,12 +139,14 @@ class LocalStorage(StorageBackend):
         source = self.local_path(key)
         if not source.is_file():
             raise FileNotFoundError(key)
-        destination.write_bytes(source.read_bytes())
+        shutil.copyfile(source, destination)
 
-    def upload_file(self, key: str, source: Path, content_type: str | None = None) -> None:
+    def upload_file(
+        self, key: str, source: Path, content_type: str | None = None
+    ) -> None:
         destination = self.local_path(key)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(source.read_bytes())
+        shutil.copyfile(source, destination)
 
 
 class S3Storage(StorageBackend):
@@ -129,15 +163,17 @@ class S3Storage(StorageBackend):
     def build_key(self, user_id: str, kind: str, asset_id: str, ext: str) -> str:
         return self._build_key(user_id, kind, asset_id, ext)
 
-    def presign_upload(self, key: str, ttl_seconds: int = 3600) -> tuple[str, dict, str]:
+    def presign_upload(
+        self, key: str, ttl_seconds: int = 3600
+    ) -> tuple[str, dict, str]:
         url = self.client.generate_presigned_url(
             "put_object",
-            Params={"Bucket": self.bucket, "Key": key},
+            Params={"Bucket": self.bucket, "Key": key, "IfNoneMatch": "*"},
             ExpiresIn=ttl_seconds,
         )
         return (
             url,
-            {"Content-Type": "application/octet-stream"},
+            {"Content-Type": "application/octet-stream", "If-None-Match": "*"},
             (utc_now() + timedelta(seconds=ttl_seconds)).isoformat(),
         )
 
@@ -175,7 +211,9 @@ class S3Storage(StorageBackend):
     def download_to(self, key: str, destination: Path) -> None:
         self.client.download_file(self.bucket, key, str(destination))
 
-    def upload_file(self, key: str, source: Path, content_type: str | None = None) -> None:
+    def upload_file(
+        self, key: str, source: Path, content_type: str | None = None
+    ) -> None:
         extra = {"ContentType": content_type} if content_type else None
         if extra:
             self.client.upload_file(str(source), self.bucket, key, ExtraArgs=extra)
@@ -195,7 +233,9 @@ def get_storage() -> StorageBackend:
         elif backend == "s3":
             _storage = S3Storage()
         else:
-            raise RuntimeError(f"Unsupported STORAGE_BACKEND: {settings.STORAGE_BACKEND}")
+            raise RuntimeError(
+                f"Unsupported STORAGE_BACKEND: {settings.STORAGE_BACKEND}"
+            )
     return _storage
 
 

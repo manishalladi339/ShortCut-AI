@@ -134,7 +134,7 @@ export default function SignIn() {
               </Text>
             ) : null}
             <Button label="Sign in" onPress={submit} loading={busy} testID="auth-signin-submit-button" />
-            <View style={styles.divider}>
+            {process.env.EXPO_PUBLIC_GOOGLE_AUTH_ENABLED === "true" ? <><View style={styles.divider}>
               <View style={styles.line} />
               <Text style={[typography.caption, { color: colors.textLow, marginHorizontal: 12 }]}>
                 or continue with
@@ -146,7 +146,7 @@ export default function SignIn() {
               variant="secondary"
               onPress={loginWithGoogle}
               testID="auth-google-login-button"
-            />
+            /></> : null}
             <Pressable
               onPress={() => router.replace("/(auth)/sign-up")}
               testID="signin-go-signup"
