@@ -51,8 +51,6 @@ async def create_constrained_edit(
             instruction=body.instruction,
             scope_start_sec=body.scope_start_sec,
             scope_end_sec=body.scope_end_sec,
-            additional_intents=additional_intents,
-            additional_operations=additional_operations,
         )
         proposal = build_constrained_proposal(
             project_id=project_id,
@@ -61,6 +59,8 @@ async def create_constrained_edit(
             instruction=body.instruction,
             scope_start_sec=body.scope_start_sec,
             scope_end_sec=body.scope_end_sec,
+            additional_intents=additional_intents,
+            additional_operations=additional_operations,
         )
     except ValueError as exc:
         raise _error("constrained_edit.unsupported_or_empty", str(exc)) from exc
