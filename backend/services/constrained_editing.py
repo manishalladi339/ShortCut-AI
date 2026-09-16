@@ -525,6 +525,175 @@ def _caption_operations(
     return intents, operations
 
 
+def _motion_operations(
+    *,
+    instruction: str,
+    sequence: dict,
+    scope_start: int,
+    scope_end: int,
+) -> tuple[list[str], list[dict]]:
+    lowered = instruction.lower()
+    motion_terms = (
+        "zoom",
+        "push in",
+        "push-in",
+        "pull out",
+        "pull-out",
+        "pan left",
+        "pan right",
+        "pan up",
+        "pan down",
+        "ken burns",
+        "motion",
+    )
+    if not any(term in lowered for term in motion_terms):
+        return [], []
+
+    remove_motion = bool(
+        re.search(r"\b(?:remove|disable|clear|turn\s+off)\s+(?:the\s+)?motion\b", lowered)
+        or re.search(r"\b(?:make\s+)?(?:the\s+)?shot\s+static\b", lowered)
+    )
+
+    target_overlay = any(
+        term in lowered for term in ("b-roll", "broll", "b roll", "overlay")
+    )
+    target_kind = "overlay" if target_overlay else "video"
+
+    zoom_in = bool(
+        re.search(r"\b(?:zoom\s+in|push[ -]?in)\b", lowered)
+        or "ken burns" in lowered
+    )
+    zoom_out = bool(
+        re.search(r"\b(?:zoom\s+out|pull[ -]?out)\b", lowered)
+    )
+    pan_left = "pan left" in lowered
+    pan_right = "pan right" in lowered
+    pan_up = "pan up" in lowered
+    pan_down = "pan down" in lowered
+
+    if not remove_motion and not any(
+        (zoom_in, zoom_out, pan_left, pan_right, pan_up, pan_down)
+    ):
+        # Generic "add motion" gets a subtle, deterministic push-in.
+        if re.search(r"\b(?:add|give|use|subtle)\s+(?:some\s+)?motion\b", lowered):
+            zoom_in = True
+        else:
+            return [], []
+
+    intensity = 0.08
+    if re.search(r"\b(?:slight|slightly|subtle|gentle)\b", lowered):
+        intensity = 0.05
+    elif re.search(r"\b(?:strong|stronger|dramatic|much)\b", lowered):
+        intensity = 0.12
+
+    easing = "ease_in_out"
+    if "linear" in lowered:
+        easing = "linear"
+    elif re.search(r"\bease\s+in\b", lowered) and "out" not in lowered:
+        easing = "ease_in"
+    elif re.search(r"\bease\s+out\b", lowered) and "in" not in lowered:
+        easing = "ease_out"
+
+    operations: list[dict] = []
+    for track in sequence.get("tracks") or []:
+        if track.get("kind") != target_kind or track.get("locked"):
+            continue
+        for clip in track.get("clips") or []:
+            start = int(clip.get("timeline_start") or 0)
+            duration = int(clip.get("duration") or 0)
+            if duration <= 0 or not _contained(
+                start,
+                duration,
+                scope_start,
+                scope_end,
+            ):
+                continue
+
+            transform = deepcopy(clip.get("transform") or {})
+            base_scale = float(transform.get("scale", 1.0))
+            base_x = float(transform.get("position_x", 0.0))
+            base_y = float(transform.get("position_y", 0.0))
+
+            if remove_motion:
+                keyframes: list[dict] = []
+                reason = "Remove transform motion while preserving the clip's static framing."
+            else:
+                start_scale = base_scale
+                end_scale = base_scale
+                start_x = base_x
+                end_x = base_x
+                start_y = base_y
+                end_y = base_y
+
+                if zoom_in:
+                    end_scale = min(10.0, base_scale * (1.0 + intensity))
+                elif zoom_out:
+                    start_scale = min(10.0, base_scale * (1.0 + intensity))
+
+                x_offset = float(sequence.get("width") or 1080) * intensity * 0.75
+                y_offset = float(sequence.get("height") or 1920) * intensity * 0.45
+                # Camera-direction semantics: panning right moves the media left.
+                if pan_right:
+                    end_x = base_x - x_offset
+                elif pan_left:
+                    end_x = base_x + x_offset
+                if pan_up:
+                    end_y = base_y + y_offset
+                elif pan_down:
+                    end_y = base_y - y_offset
+
+                keyframes = [
+                    {
+                        "at": 0.0,
+                        "scale": round(start_scale, 6),
+                        "position_x": round(start_x, 3),
+                        "position_y": round(start_y, 3),
+                        "easing": easing,
+                    },
+                    {
+                        "at": 1.0,
+                        "scale": round(end_scale, 6),
+                        "position_x": round(end_x, 3),
+                        "position_y": round(end_y, 3),
+                        "easing": easing,
+                    },
+                ]
+                motion_labels = []
+                if zoom_in:
+                    motion_labels.append("push in")
+                if zoom_out:
+                    motion_labels.append("pull out")
+                if pan_left:
+                    motion_labels.append("pan left")
+                if pan_right:
+                    motion_labels.append("pan right")
+                if pan_up:
+                    motion_labels.append("pan up")
+                if pan_down:
+                    motion_labels.append("pan down")
+                reason = (
+                    "Apply "
+                    + " + ".join(motion_labels or ["subtle motion"])
+                    + f" using {easing.replace('_', ' ')} easing without changing clip timing or source range."
+                )
+
+            operations.append(
+                _operation(
+                    operation="set_clip_motion",
+                    component="broll" if target_kind == "overlay" else "story",
+                    payload={
+                        "sequence_id": sequence["id"],
+                        "track_id": track["id"],
+                        "clip_id": clip["id"],
+                        "keyframes": keyframes,
+                    },
+                    reason=reason,
+                )
+            )
+
+    return ["remove_motion" if remove_motion else "add_motion"], operations
+
+
 def _broll_operations(
     *,
     instruction: str,
@@ -682,6 +851,7 @@ def build_constrained_proposal(
         pacing_operations,
         _speaker_removal_operations,
         _caption_operations,
+        _motion_operations,
         _broll_operations,
         _music_operations,
     ):
@@ -701,8 +871,8 @@ def build_constrained_proposal(
         raise ValueError(
             "Create With Me currently supports scoped pacing changes, diarized "
             "speaker removal with sequence-wide ripple, semantic B-roll "
-            "replacement/removal, caption restyling/removal, and music "
-            "volume/removal."
+            "replacement/removal, visual motion, caption styling/animation/removal, "
+            "and music volume/removal."
         )
 
     structural = [
@@ -743,10 +913,15 @@ def build_constrained_proposal(
     preserve_rules = [
         f"Preserve all timeline content outside {start_sec:.2f}s–{end_sec:.2f}s.",
     ]
-    if "story" in touched:
+    if structural:
         preserve_rules.append(
             "Ripple synchronized timeline items globally while preserving retained "
             "primary clip source ranges and ordering."
+        )
+    elif "story" in touched:
+        preserve_rules.append(
+            "Preserve primary story timing, ordering and source ranges; change only "
+            "the reviewed visual transform motion."
         )
     else:
         preserve_rules.append("Do not regenerate or reorder primary story clips.")
@@ -803,6 +978,42 @@ def apply_constrained_operations(
             if component != "story":
                 raise ValueError("Speaker-removal operation has invalid component")
             _apply_speaker_ripple(sequence, payload)
+            continue
+
+        if op == "set_clip_motion":
+            if component not in {"story", "broll"}:
+                raise ValueError("Motion operation has invalid component")
+            track = next(
+                (
+                    item
+                    for item in sequence.get("tracks") or []
+                    if item.get("id") == payload.get("track_id")
+                ),
+                None,
+            )
+            expected_kind = "video" if component == "story" else "overlay"
+            if (
+                not track
+                or track.get("kind") != expected_kind
+                or track.get("locked")
+            ):
+                raise ValueError("Motion target track is unavailable or locked")
+            clip = next(
+                (
+                    item
+                    for item in track.get("clips") or []
+                    if item.get("id") == str(payload.get("clip_id") or "")
+                ),
+                None,
+            )
+            if not clip:
+                raise ValueError("Motion target clip no longer exists")
+            keyframes = deepcopy(payload.get("keyframes") or [])
+            transform = {
+                **(clip.get("transform") or {}),
+                "keyframes": keyframes,
+            }
+            clip["transform"] = transform
             continue
 
         if op == "replace_broll":
