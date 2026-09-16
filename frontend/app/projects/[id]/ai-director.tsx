@@ -701,6 +701,102 @@ export default function AIDirectorScreen() {
                 </View>
                 <StatusDot ok={latestExport.status === "completed"} />
               </View>
+              {latestExport.qa_report ? (
+                <View style={styles.qaPanel}>
+                  <View style={styles.row}>
+                    <Ionicons
+                      name={
+                        latestExport.qa_report.status === "passed"
+                          ? "shield-checkmark-outline"
+                          : "warning-outline"
+                      }
+                      color={qaStatusColor(latestExport.qa_report.status)}
+                      size={20}
+                    />
+                    <Text style={[typography.bodyMed, { color: colors.textHigh, flex: 1 }]}>
+                      Export QA
+                    </Text>
+                    <Text
+                      style={[
+                        typography.caption,
+                        { color: qaStatusColor(latestExport.qa_report.status) },
+                      ]}
+                    >
+                      {latestExport.qa_report.status.toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      typography.caption,
+                      { color: colors.textMedium, marginTop: spacing.xs },
+                    ]}
+                  >
+                    {latestExport.qa_report.issue_count === 0
+                      ? "ShortCut found no QA issues in the finished render."
+                      : `ShortCut found ${latestExport.qa_report.issue_count} issue${
+                          latestExport.qa_report.issue_count === 1 ? "" : "s"
+                        } · ${latestExport.qa_report.error_count} error · ${latestExport.qa_report.warning_count} warning${
+                          latestExport.qa_report.warning_count === 1 ? "" : "s"
+                        }`}
+                  </Text>
+
+                  {latestExport.qa_report.issues.slice(0, 5).map((issue, index) => (
+                    <View key={`${issue.code}-${index}`} style={styles.qaIssue}>
+                      <View style={styles.row}>
+                        <View
+                          style={[
+                            styles.qaSeverityDot,
+                            { backgroundColor: qaIssueColor(issue.severity) },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            typography.bodyMed,
+                            { color: colors.textHigh, flex: 1 },
+                          ]}
+                        >
+                          {issue.message}
+                        </Text>
+                      </View>
+                      {issue.start_sec !== null ? (
+                        <Text
+                          style={[
+                            typography.caption,
+                            { color: colors.textMedium, marginTop: spacing.xs },
+                          ]}
+                        >
+                          {formatQaTime(issue.start_sec)}
+                          {issue.end_sec !== null
+                            ? `–${formatQaTime(issue.end_sec)}`
+                            : ""}
+                          {" · "}
+                          {issue.category}
+                        </Text>
+                      ) : (
+                        <Text
+                          style={[
+                            typography.caption,
+                            { color: colors.textMedium, marginTop: spacing.xs },
+                          ]}
+                        >
+                          {issue.category}
+                        </Text>
+                      )}
+                      {issue.suggested_action ? (
+                        <Text
+                          style={[
+                            typography.caption,
+                            { color: colors.textLow, marginTop: spacing.xs },
+                          ]}
+                        >
+                          {issue.suggested_action}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
               {latestExport.download_url ? (
                 <Button
                   label="Open finished video"
@@ -845,6 +941,26 @@ function creatorPreferenceLabels(preferences: Record<string, any>): string[] {
   if (music < 0.95) labels.push("Quieter music");
   if (music > 1.05) labels.push("Louder music");
   return labels.slice(0, 6);
+}
+
+
+function qaStatusColor(status: "passed" | "warnings" | "failed") {
+  if (status === "passed") return colors.success;
+  if (status === "failed") return colors.danger;
+  return colors.warning;
+}
+
+function qaIssueColor(severity: "info" | "warning" | "error") {
+  if (severity === "error") return colors.danger;
+  if (severity === "warning") return colors.warning;
+  return colors.aiAccent;
+}
+
+function formatQaTime(value: number) {
+  const seconds = Math.max(0, value);
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds - minutes * 60;
+  return `${minutes}:${remainder.toFixed(1).padStart(4, "0")}`;
 }
 
 const styles = StyleSheet.create({
@@ -1017,6 +1133,23 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
+  },
+  qaPanel: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    gap: spacing.sm,
+  },
+  qaIssue: {
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
+  },
+  qaSeverityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   replaceWarning: {
     flexDirection: "row",
