@@ -29,6 +29,7 @@ def export_updates_from_job(doc: dict, job: dict, *, now=None) -> dict:
         ):
             return {
                 "status": "completed",
+                "active": False,
                 "storage_key": result.get("storage_key"),
                 "duration_sec": result.get("duration_sec"),
                 "render_metadata": result.get("render_metadata") or {},
@@ -39,11 +40,13 @@ def export_updates_from_job(doc: dict, job: dict, *, now=None) -> dict:
     if job.get("status") == "failed" and doc.get("status") != "completed":
         return {
             "status": "failed",
+            "active": False,
             "updated_at": job.get("finished_at") or job.get("updated_at") or fallback_now,
         }
     if job.get("status") == "queued" and doc.get("status") == "rendering":
         return {
             "status": "queued",
+            "active": True,
             "updated_at": job.get("updated_at") or fallback_now,
         }
     return {}
@@ -136,6 +139,7 @@ async def create_export(
             "project_state_version": plan.project_state_version,
             "preset": body.preset,
             "status": {"$in": ["queued", "rendering"]},
+            "active": True,
         },
         {"_id": 0},
         sort=[("created_at", -1)],
@@ -164,6 +168,7 @@ async def create_export(
         "sequence_id": plan.sequence_id,
         "project_state_version": plan.project_state_version,
         "status": "queued",
+        "active": True,
         "preset": body.preset,
         "job_id": job["id"],
         "storage_key": None,
