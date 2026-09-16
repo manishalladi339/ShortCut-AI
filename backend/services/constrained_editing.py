@@ -522,6 +522,10 @@ def _caption_operations(
             lowered,
         )
         or re.search(rf"\bstatic\s+{caption_subject}\b", lowered)
+        or re.search(
+            rf"\b(?:make\s+)?(?:the\s+)?{caption_subject}\s+static\b",
+            lowered,
+        )
     ):
         animation = "none"
         style_reasons.append("disable caption animation")
@@ -751,7 +755,7 @@ def build_constrained_proposal(
         raise ValueError(
             "Create With Me currently supports scoped pacing changes, diarized "
             "speaker removal with sequence-wide ripple, semantic B-roll "
-            "replacement/removal, caption restyling/removal, and music "
+            "replacement/removal, caption styling/animation/removal, and music "
             "volume/removal."
         )
 
