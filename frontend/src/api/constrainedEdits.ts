@@ -13,7 +13,8 @@ export interface ConstrainedEditOperation {
     | "remove_speaker_ripple"
     | "replace_broll"
     | "retime_scope"
-    | "repair_caption";
+    | "repair_caption"
+    | "set_motion_keyframes";
   component: ConstrainedComponent;
   payload: Record<string, any>;
   reason: string;
