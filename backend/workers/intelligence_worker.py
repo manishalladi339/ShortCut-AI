@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 from core.security import utc_now
 from db.mongo import close as close_mongo
 from db.mongo import get_db
-from models.job import JobType
+from models.job import JobStatus, JobType
 from services import job_service
 from services.audio_extract import extract_mono_16k
 from services.broll_planning import visual_text
@@ -27,6 +27,108 @@ from services.vision import get_vision_provider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("shortcut.intelligence-worker")
+
+
+def _worker_lease_seconds() -> int:
+    return max(
+        settings.JOB_LEASE_SECONDS,
+        settings.MEDIA_INTELLIGENCE_TIMEOUT_SEC + 300,
+    )
+
+
+async def _complete_already_analyzed(job: dict, record: dict, asset: dict) -> bool:
+    if record.get("status") != "completed" or record.get("job_id") != job["id"]:
+        return False
+
+    now = utc_now()
+    await get_db().assets.update_one(
+        {"id": asset["id"]},
+        {
+            "$set": {
+                "language": record.get("language"),
+                "intelligence_status": "completed",
+                "intelligence_id": record["id"],
+                "updated_at": now,
+            }
+        },
+    )
+    owned = await job_service.succeed(
+        job["id"],
+        {
+            "intelligence_id": record["id"],
+            "word_count": len(record.get("words") or []),
+            "segment_count": len(record.get("segments") or []),
+            "scene_count": len(record.get("scenes") or []),
+            "silence_count": len(record.get("silences") or []),
+            "rhythm_event_count": len(record.get("rhythm_events") or []),
+            "beat_grid_confidence": (record.get("beat_grid") or {}).get("confidence"),
+            "speaker_count": len(record.get("speakers") or []),
+            "visual_observation_count": len(record.get("visual_observations") or []),
+            "visual_embedded_count": len(record.get("visual_vectors") or []),
+            "semantic_unit_count": len(record.get("semantic_units") or []),
+            "embedded_unit_count": len(record.get("semantic_vectors") or []),
+            "reconciled_existing_intelligence": True,
+        },
+        lease_token=job["lease_token"],
+    )
+    if not owned:
+        logger.warning(
+            "lost lease while reconciling intelligence %s",
+            record["id"],
+        )
+    return True
+
+
+async def _recover_stale_intelligence() -> None:
+    recovered = await job_service.recover_stale_jobs(JobType.media_intelligence)
+    if not recovered:
+        return
+    db = get_db()
+    for job in recovered:
+        intelligence_id = (job.get("payload") or {}).get("intelligence_id")
+        if not intelligence_id:
+            continue
+        status = (
+            "queued"
+            if job["recovered_status"] == JobStatus.queued.value
+            else "failed"
+        )
+        await db.media_intelligence.update_one(
+            {
+                "id": intelligence_id,
+                "status": {"$ne": "completed"},
+            },
+            {
+                "$set": {
+                    "status": status,
+                    "updated_at": utc_now(),
+                }
+            },
+        )
+        if job.get("asset_id"):
+            await db.assets.update_one(
+                {
+                    "id": job["asset_id"],
+                    "intelligence_status": {"$ne": "completed"},
+                },
+                {
+                    "$set": {
+                        "intelligence_status": status,
+                        "updated_at": utc_now(),
+                    }
+                },
+            )
+
+
+async def _progress(job: dict, progress: int) -> None:
+    ok = await job_service.set_progress(
+        job["id"],
+        progress,
+        lease_token=job["lease_token"],
+        lease_seconds=_worker_lease_seconds(),
+    )
+    if not ok:
+        raise RuntimeError("media-intelligence job lease was lost")
 
 
 def _normalize_words(words: list[dict]) -> list[dict]:
@@ -48,8 +150,11 @@ def _normalize_segments(segments: list[dict]) -> list[dict]:
 
 
 async def process_one() -> bool:
-    from core.config import settings
-    job = await job_service.claim_next(JobType.media_intelligence)
+    await _recover_stale_intelligence()
+    job = await job_service.claim_next(
+        JobType.media_intelligence,
+        lease_seconds=_worker_lease_seconds(),
+    )
     if not job:
         return False
     db = get_db()
@@ -59,6 +164,8 @@ async def process_one() -> bool:
         asset = await db.assets.find_one({"id": job["asset_id"], "user_id": job["user_id"]}, {"_id": 0})
         if not record or not asset:
             raise RuntimeError("analysis record or asset no longer exists")
+        if await _complete_already_analyzed(job, record, asset):
+            return True
         await db.media_intelligence.update_one({"id": intelligence_id}, {"$set": {"status": "running", "updated_at": utc_now()}})
 
         with TemporaryDirectory(prefix="shortcut-intelligence-") as tmp:
@@ -66,9 +173,9 @@ async def process_one() -> bool:
             suffix = Path(asset["filename"]).suffix
             with materialize(asset["storage_key"], suffix=suffix) as source:
                 audio = root / "speech.wav"
-                await job_service.set_progress(job["id"], 15)
+                await _progress(job, 15)
                 extract_mono_16k(source, audio)
-                await job_service.set_progress(job["id"], 25)
+                await _progress(job, 25)
                 try:
                     silences = detect_silences(
                         audio,
@@ -93,13 +200,13 @@ async def process_one() -> bool:
                 beat_grid = estimate_beat_grid(
                     [event["time"] for event in rhythm_events]
                 )
-                await job_service.set_progress(job["id"], 40)
+                await _progress(job, 40)
                 transcript = await get_transcription_provider().transcribe(audio)
                 scenes, visual_observations = [], []
                 if asset["kind"] == "video":
-                    await job_service.set_progress(job["id"], 55)
+                    await _progress(job, 55)
                     scenes = detect_scenes(source, asset.get("duration_sec"))
-                    await job_service.set_progress(job["id"], 65)
+                    await _progress(job, 65)
                     frames = extract_frames(source, root / "frames", scenes=scenes, duration_sec=asset.get("duration_sec"), max_frames=settings.MAX_VISION_FRAMES)
                     if frames:
                         visual_observations = await get_vision_provider().analyze_frames(frames)
@@ -107,7 +214,7 @@ async def process_one() -> bool:
         words = _normalize_words(transcript.get("words") or [])
         segments = _normalize_segments(transcript.get("segments") or [])
         semantic_units = build_semantic_units(segments=segments, scenes=scenes, split_on_speaker=True)
-        await job_service.set_progress(job["id"], 80)
+        await _progress(job, 80)
         embedder = get_embedding_provider()
         semantic_vectors = await embedder.embed([unit["text"] for unit in semantic_units]) if semantic_units else []
         visual_texts = [visual_text(item) for item in visual_observations]
@@ -120,22 +227,57 @@ async def process_one() -> bool:
             "semantic_units": semantic_units, "semantic_vectors": semantic_vectors, "embedding_model": settings.EMBEDDING_MODEL,
             "provider": transcript.get("provider"), "model": transcript.get("model"),
         }
+        await _progress(job, 95)
         now = utc_now()
         await db.media_intelligence.update_one({"id": intelligence_id}, {"$set": {**result, "status": "completed", "updated_at": now}})
         await db.assets.update_one({"id": asset["id"]}, {"$set": {"language": result["language"], "intelligence_status": "completed", "intelligence_id": intelligence_id, "updated_at": now}})
-        await job_service.succeed(job["id"], {"intelligence_id": intelligence_id, "word_count": len(words), "segment_count": len(segments), "scene_count": len(scenes), "silence_count": len(silences), "rhythm_event_count": len(rhythm_events), "beat_grid_confidence": (beat_grid or {}).get("confidence"), "speaker_count": len(transcript.get("speakers") or []), "visual_observation_count": len(visual_observations), "visual_embedded_count": len(visual_vectors), "semantic_unit_count": len(semantic_units), "embedded_unit_count": len(semantic_vectors)})
+        owned = await job_service.succeed(
+            job["id"],
+            {
+                "intelligence_id": intelligence_id,
+                "word_count": len(words),
+                "segment_count": len(segments),
+                "scene_count": len(scenes),
+                "silence_count": len(silences),
+                "rhythm_event_count": len(rhythm_events),
+                "beat_grid_confidence": (beat_grid or {}).get("confidence"),
+                "speaker_count": len(transcript.get("speakers") or []),
+                "visual_observation_count": len(visual_observations),
+                "visual_embedded_count": len(visual_vectors),
+                "semantic_unit_count": len(semantic_units),
+                "embedded_unit_count": len(semantic_vectors),
+            },
+            lease_token=job["lease_token"],
+        )
+        if not owned:
+            logger.warning(
+                "media-intelligence job %s lost its lease before completion",
+                job["id"],
+            )
         return True
     except Exception as exc:
         final = job["attempt"] >= job["max_attempts"]
-        await job_service.fail(job, code="intelligence.failed", message=str(exc))
-        if intelligence_id:
-            await db.media_intelligence.update_one({"id": intelligence_id}, {"$set": {"status": "failed" if final else "queued", "updated_at": utc_now()}})
+        owned = await job_service.fail(
+            job,
+            code="intelligence.failed",
+            message=str(exc),
+            lease_token=job.get("lease_token"),
+        )
+        if owned and intelligence_id:
+            await db.media_intelligence.update_one(
+                {"id": intelligence_id},
+                {
+                    "$set": {
+                        "status": "failed" if final else "queued",
+                        "updated_at": utc_now(),
+                    }
+                },
+            )
         logger.exception("media intelligence failed for job %s", job["id"])
         return True
 
 
 async def run_forever() -> None:
-    from core.config import settings
     while True:
         if not await process_one():
             await asyncio.sleep(settings.WORKER_POLL_INTERVAL_SEC)

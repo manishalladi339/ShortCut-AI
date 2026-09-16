@@ -43,10 +43,34 @@ async def ensure_indexes() -> None:
     await db.assets.create_index([("processing_status", 1), ("updated_at", -1)])
 
     await db.jobs.create_index([("type", 1), ("status", 1), ("created_at", 1)])
+    await db.jobs.create_index([("type", 1), ("status", 1), ("lease_expires_at", 1)])
     await db.jobs.create_index([("user_id", 1), ("created_at", -1)])
     await db.jobs.create_index("asset_id")
 
     await db.exports.create_index([("user_id", 1), ("project_id", 1), ("created_at", -1)])
+    await db.exports.create_index(
+        [
+            ("user_id", 1),
+            ("project_id", 1),
+            ("sequence_id", 1),
+            ("project_state_version", 1),
+            ("preset", 1),
+            ("status", 1),
+            ("created_at", -1),
+        ]
+    )
+    await db.exports.create_index(
+        [
+            ("user_id", 1),
+            ("project_id", 1),
+            ("sequence_id", 1),
+            ("project_state_version", 1),
+            ("preset", 1),
+        ],
+        unique=True,
+        partialFilterExpression={"active": True},
+        name="uniq_active_export_request",
+    )
     await db.exports.create_index("job_id", unique=True)
 
     await db.media_intelligence.create_index(

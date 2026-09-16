@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pymongo.errors import DuplicateKeyError
 
 from core.deps import get_current_user
 from core.security import utc_now
@@ -12,10 +13,45 @@ from models.export import ExportOut, ExportRequest
 from models.job import JobType
 from models.render_plan import RenderPlan
 from services import job_service
+from services.export_recovery import export_updates_from_job
 from services.render_plan import compile_render_plan
 from services.storage import get_storage
 
 router = APIRouter(prefix="/projects", tags=["render"])
+
+
+async def _reconcile_export_from_job(doc: dict) -> dict:
+    """Repair an export record from its durable job result/status when needed."""
+    if doc.get("status") == "completed" and doc.get("storage_key"):
+        return doc
+
+    job_id = doc.get("job_id")
+    if not job_id:
+        return doc
+
+    job = await get_db().jobs.find_one(
+        {
+            "id": job_id,
+            "user_id": doc.get("user_id"),
+        },
+        {"_id": 0},
+    )
+    if not job:
+        return doc
+
+    updates = export_updates_from_job(doc, job, fallback_now=utc_now())
+    if not updates:
+        return doc
+
+    await get_db().exports.update_one(
+        {
+            "id": doc["id"],
+            "user_id": doc["user_id"],
+            "status": {"$ne": "completed"},
+        },
+        {"$set": updates},
+    )
+    return {**doc, **updates}
 
 
 def _export_out(doc: dict) -> ExportOut:
@@ -60,6 +96,25 @@ async def create_export(
         )
 
     db = get_db()
+
+    # Repeated taps must not enqueue duplicate expensive renders for the exact
+    # same canonical timeline version.
+    existing = await db.exports.find_one(
+        {
+            "user_id": user["id"],
+            "project_id": project_id,
+            "sequence_id": plan.sequence_id,
+            "project_state_version": plan.project_state_version,
+            "preset": body.preset,
+            "status": {"$in": ["queued", "rendering"]},
+        },
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+    if existing:
+        existing = await _reconcile_export_from_job(existing)
+        return _export_out(existing)
+
     now = utc_now()
     export_id = str(uuid.uuid4())
     job = await job_service.enqueue(
@@ -80,6 +135,7 @@ async def create_export(
         "sequence_id": plan.sequence_id,
         "project_state_version": plan.project_state_version,
         "status": "queued",
+        "active": True,
         "preset": body.preset,
         "job_id": job["id"],
         "storage_key": None,
@@ -90,7 +146,43 @@ async def create_export(
         "created_at": now,
         "updated_at": now,
     }
-    await db.exports.insert_one(doc)
+    try:
+        await db.exports.insert_one(doc)
+    except DuplicateKeyError:
+        # Another request won the active-export unique index after our initial
+        # read. Remove our still-unclaimed orphan job when possible and return
+        # the winning export instead of surfacing a 500.
+        await db.jobs.delete_one(
+            {
+                "id": job["id"],
+                "status": "queued",
+                "attempt": 0,
+            }
+        )
+        existing = await db.exports.find_one(
+            {
+                "user_id": user["id"],
+                "project_id": project_id,
+                "sequence_id": plan.sequence_id,
+                "project_state_version": plan.project_state_version,
+                "preset": body.preset,
+                "status": {"$in": ["queued", "rendering"]},
+            },
+            {"_id": 0},
+            sort=[("created_at", -1)],
+        )
+        if existing:
+            existing = await _reconcile_export_from_job(existing)
+            return _export_out(existing)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {
+                    "code": "render.request_race",
+                    "message": "Another render request changed state; retry the export.",
+                }
+            },
+        )
     return _export_out(doc)
 
 
@@ -108,7 +200,8 @@ async def list_exports(
         .limit(limit)
         .to_list(limit)
     )
-    return [_export_out(doc) for doc in docs]
+    reconciled = [await _reconcile_export_from_job(doc) for doc in docs]
+    return [_export_out(doc) for doc in reconciled]
 
 
 @router.get("/{project_id}/exports/{export_id}", response_model=ExportOut)
@@ -126,4 +219,5 @@ async def get_export(
             status_code=404,
             detail={"error": {"code": "resource.not_found", "message": "Export not found"}},
         )
+    doc = await _reconcile_export_from_job(doc)
     return _export_out(doc)

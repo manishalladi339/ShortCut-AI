@@ -38,3 +38,5 @@ class JobOut(BaseModel):
     updated_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    heartbeat_at: datetime | None = None
+    lease_expires_at: datetime | None = None
