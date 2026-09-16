@@ -278,5 +278,6 @@ async def structure_narrative(
             project=project,
             candidates=candidates,
             target_audience=target_audience,
+            project_intelligence=project_intelligence,
         )
     raise NarrativePlanningError(f"unsupported narrative provider: {provider}")
