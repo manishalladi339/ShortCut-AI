@@ -46,10 +46,12 @@ def _animation_tags(
     outro_ms = min(140, max(60, cue_duration_ms // 6))
 
     if value == "pop":
+        overshoot_ms = max(40, round(intro_ms * 0.58))
         return (
             f"\\pos({x},{y})"
-            r"\fscx82\fscy82"
-            + f"\\t(0,{intro_ms},\\fscx100\\fscy100)"
+            r"\fscx88\fscy88"
+            + f"\\t(0,{overshoot_ms},\\fscx108\\fscy108)"
+            + f"\\t({overshoot_ms},{intro_ms},\\fscx100\\fscy100)"
             + f"\\fad(50,{outro_ms})"
         )
 
