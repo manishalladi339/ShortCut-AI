@@ -4,6 +4,7 @@ This executor supports:
 - multiple video/overlay clips and tracks
 - overlapping visual clips via ordered compositing
 - clip transforms: scale, position, rotation, opacity + eased keyframes
+- visual fade and directional slide transitions
 - source audio plus standalone audio-track mixing
 - deterministic speech-responsive music ducking via sidechain compression
 - playback-rate and volume changes
@@ -153,6 +154,22 @@ def _motion_expressions(
     )
 
 
+_VISUAL_TRANSITIONS = {
+    "fade",
+    "slide_left",
+    "slide_right",
+    "slide_up",
+    "slide_down",
+}
+
+
+def _transition_kind(transition) -> str | None:
+    if transition is None:
+        return None
+    value = getattr(transition, "kind", None)
+    return str(getattr(value, "value", value))
+
+
 def _transition_seconds(
     transition,
     *,
@@ -162,12 +179,102 @@ def _transition_seconds(
 ) -> float:
     if transition is None:
         return 0.0
-    if transition.kind != "fade":
-        raise RenderExecutionError(f"unsupported transition kind: {transition.kind}")
+    kind = _transition_kind(transition)
+    if kind not in _VISUAL_TRANSITIONS:
+        raise RenderExecutionError(f"unsupported transition kind: {kind}")
     duration = _ticks_to_seconds(transition.duration, numerator, denominator)
     if duration <= 0 or duration > clip_duration_sec + 1e-6:
         raise RenderExecutionError("transition duration must fit inside the clip")
     return duration
+
+
+def _audio_transition_seconds(
+    transition,
+    *,
+    track_kind: str,
+    numerator: int,
+    denominator: int,
+    clip_duration_sec: float,
+) -> float:
+    """Return audio fade duration without applying visual slide semantics to audio."""
+    if transition is None:
+        return 0.0
+    kind = _transition_kind(transition)
+    if kind != "fade":
+        if track_kind == "audio":
+            raise RenderExecutionError(
+                "standalone audio clips support fade transitions only"
+            )
+        return 0.0
+    return _transition_seconds(
+        transition,
+        numerator=numerator,
+        denominator=denominator,
+        clip_duration_sec=clip_duration_sec,
+    )
+
+
+def _lerp_expression(start: str, end: str, progress: str) -> str:
+    eased = _ease_expression(progress, "ease_in_out")
+    return f"({start})+(({end})-({start}))*({eased})"
+
+
+def _transition_position_expressions(
+    *,
+    base_x: str,
+    base_y: str,
+    transition_in,
+    transition_out,
+    transition_in_sec: float,
+    transition_out_sec: float,
+    timeline_start: float,
+    target_duration: float,
+) -> tuple[str, str]:
+    """Apply deterministic slide entry/exit motion around the base transform."""
+    x = base_x
+    y = base_y
+
+    in_kind = _transition_kind(transition_in)
+    if transition_in_sec > 0 and in_kind and in_kind != "fade":
+        progress = (
+            f"(t-{timeline_start:.8f})/{transition_in_sec:.8f}"
+        )
+        if in_kind == "slide_left":
+            start_x, start_y = "-w", base_y
+        elif in_kind == "slide_right":
+            start_x, start_y = "W", base_y
+        elif in_kind == "slide_up":
+            start_x, start_y = base_x, "H"
+        elif in_kind == "slide_down":
+            start_x, start_y = base_x, "-h"
+        else:
+            raise RenderExecutionError(f"unsupported slide transition: {in_kind}")
+        enter_x = _lerp_expression(start_x, base_x, progress)
+        enter_y = _lerp_expression(start_y, base_y, progress)
+        cutoff = timeline_start + transition_in_sec
+        x = f"if(lt(t,{cutoff:.8f}),({enter_x}),({x}))"
+        y = f"if(lt(t,{cutoff:.8f}),({enter_y}),({y}))"
+
+    out_kind = _transition_kind(transition_out)
+    if transition_out_sec > 0 and out_kind and out_kind != "fade":
+        out_start = timeline_start + target_duration - transition_out_sec
+        progress = f"(t-{out_start:.8f})/{transition_out_sec:.8f}"
+        if out_kind == "slide_left":
+            end_x, end_y = "-w", base_y
+        elif out_kind == "slide_right":
+            end_x, end_y = "W", base_y
+        elif out_kind == "slide_up":
+            end_x, end_y = base_x, "-h"
+        elif out_kind == "slide_down":
+            end_x, end_y = base_x, "H"
+        else:
+            raise RenderExecutionError(f"unsupported slide transition: {out_kind}")
+        leave_x = _lerp_expression(base_x, end_x, progress)
+        leave_y = _lerp_expression(base_y, end_y, progress)
+        x = f"if(gte(t,{out_start:.8f}),({leave_x}),({x}))"
+        y = f"if(gte(t,{out_start:.8f}),({leave_y}),({y}))"
+
+    return x, y
 
 
 def _is_speech_sidechain_source(clip) -> bool:
@@ -344,9 +451,9 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     denominator=plan.timebase_denominator,
                     clip_duration_sec=target_duration,
                 )
-                if fade_in > 0:
+                if fade_in > 0 and _transition_kind(clip.transition_in) == "fade":
                     visual_filter += f"fade=t=in:st=0:d={fade_in:.6f}:alpha=1,"
-                if fade_out > 0:
+                if fade_out > 0 and _transition_kind(clip.transition_out) == "fade":
                     fade_out_start = max(0.0, target_duration - fade_out)
                     visual_filter += (
                         f"fade=t=out:st={fade_out_start:.6f}:"
@@ -359,11 +466,24 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                 )
                 filters.append(visual_filter)
 
+                base_x_expr = f"(W-w)/2+({pos_x_expr})"
+                base_y_expr = f"(H-h)/2+({pos_y_expr})"
+                overlay_x_expr, overlay_y_expr = _transition_position_expressions(
+                    base_x=base_x_expr,
+                    base_y=base_y_expr,
+                    transition_in=clip.transition_in,
+                    transition_out=clip.transition_out,
+                    transition_in_sec=fade_in,
+                    transition_out_sec=fade_out,
+                    timeline_start=timeline_start,
+                    target_duration=target_duration,
+                )
+
                 out_label = f"vout{idx}"
                 filters.append(
                     f"[{current_video}][{prepared}]"
-                    f"overlay=x='(W-w)/2+({pos_x_expr})':"
-                    f"y='(H-h)/2+({pos_y_expr})':"
+                    f"overlay=x='{overlay_x_expr}':"
+                    f"y='{overlay_y_expr}':"
                     "eval=frame:eof_action=pass:shortest=0"
                     f"[{out_label}]"
                 )
@@ -390,14 +510,16 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     * 1000
                 )
                 label = f"amixsrc{idx}"
-                fade_in = _transition_seconds(
+                fade_in = _audio_transition_seconds(
                     clip.transition_in,
+                    track_kind=clip.track_kind,
                     numerator=plan.timebase_numerator,
                     denominator=plan.timebase_denominator,
                     clip_duration_sec=target_duration,
                 )
-                fade_out = _transition_seconds(
+                fade_out = _audio_transition_seconds(
                     clip.transition_out,
+                    track_kind=clip.track_kind,
                     numerator=plan.timebase_numerator,
                     denominator=plan.timebase_denominator,
                     clip_duration_sec=target_duration,
@@ -409,9 +531,15 @@ def execute(plan: RenderPlan, output_path: Path) -> dict:
                     f"{_atempo_chain(clip.playback_rate)},"
                     f"atrim=duration={target_duration:.6f},"
                 )
-                if fade_in > 0:
+                in_kind = _transition_kind(clip.transition_in)
+                out_kind = _transition_kind(clip.transition_out)
+                if clip.track_kind == "audio" and in_kind not in {None, "fade"}:
+                    raise RenderExecutionError("standalone audio transitions support fade only")
+                if clip.track_kind == "audio" and out_kind not in {None, "fade"}:
+                    raise RenderExecutionError("standalone audio transitions support fade only")
+                if fade_in > 0 and in_kind == "fade":
                     audio_filter += f"afade=t=in:st=0:d={fade_in:.6f},"
-                if fade_out > 0:
+                if fade_out > 0 and out_kind == "fade":
                     audio_filter += (
                         f"afade=t=out:st={max(0.0, target_duration - fade_out):.6f}:"
                         f"d={fade_out:.6f},"

@@ -19,6 +19,18 @@ export interface ClipTransform {
   keyframes: TransformKeyframe[];
 }
 
+export type TransitionKind =
+  | "fade"
+  | "slide_left"
+  | "slide_right"
+  | "slide_up"
+  | "slide_down";
+
+export interface ClipTransition {
+  kind: TransitionKind;
+  duration: number;
+}
+
 export interface ProjectClip {
   id: string;
   asset_id: string;
@@ -30,8 +42,8 @@ export interface ProjectClip {
   volume: number;
   enabled?: boolean;
   transform?: ClipTransform;
-  transition_in?: Record<string, any> | null;
-  transition_out?: Record<string, any> | null;
+  transition_in?: ClipTransition | null;
+  transition_out?: ClipTransition | null;
   ducking?: Record<string, any> | null;
   metadata: Record<string, any>;
 }
