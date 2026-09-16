@@ -62,6 +62,13 @@ async def ensure_indexes() -> None:
         [("user_id", 1), ("updated_at", -1)]
     )
 
+    await db.ai_constrained_edit_proposals.create_index(
+        [("user_id", 1), ("project_id", 1), ("created_at", -1)]
+    )
+    await db.ai_constrained_edit_proposals.create_index(
+        [("project_id", 1), ("project_state_version", 1)]
+    )
+
     await db.ai_edit_plans.create_index(
         [("user_id", 1), ("project_id", 1), ("created_at", -1)]
     )
