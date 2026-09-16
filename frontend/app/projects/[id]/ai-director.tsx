@@ -49,6 +49,7 @@ export default function AIDirectorScreen() {
   const [includeCaptions, setIncludeCaptions] = useState(true);
   const [removeDeadAir, setRemoveDeadAir] = useState(true);
   const [rhythmBroll, setRhythmBroll] = useState(true);
+  const [smartReframe, setSmartReframe] = useState(true);
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [selectedOperationIds, setSelectedOperationIds] = useState<Set<string>>(new Set());
 
@@ -190,6 +191,7 @@ export default function AIDirectorScreen() {
         remove_dead_air: removeDeadAir,
         rhythm_snap_broll: rhythmBroll,
         broll_fade: true,
+        smart_reframe: smartReframe,
         music_ducking: true,
       });
 
@@ -403,6 +405,20 @@ export default function AIDirectorScreen() {
             value={rhythmBroll}
             onValueChange={setRhythmBroll}
           />
+          <ToggleRow
+            label="Subject-aware reframing"
+            value={smartReframe}
+            onValueChange={setSmartReframe}
+          />
+          <Text
+            style={[
+              typography.caption,
+              { color: colors.textLow, marginTop: spacing.xs },
+            ]}
+          >
+            Uses frame-local visible-subject evidence only. ShortCut does not identify
+            people or link faces across frames.
+          </Text>
         </View>
 
         <SectionTitle title="Media readiness" />
@@ -588,6 +604,32 @@ export default function AIDirectorScreen() {
                 <Text style={[typography.caption, { color: colors.textLow, marginTop: spacing.xs }]}>
                   {candidate.reasons.slice(0, 3).join(" · ")}
                 </Text>
+                {candidate.reframe_suggestion ? (
+                  <View style={styles.reframeEvidence}>
+                    <Ionicons
+                      name="scan-outline"
+                      color={colors.aiAccent}
+                      size={16}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[typography.caption, { color: colors.textHigh }]}>
+                        Subject-aware reframe · {reframeLabel(candidate.reframe_suggestion.strategy)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.tinyEvidence,
+                          { color: colors.textMedium, marginTop: 2 },
+                        ]}
+                      >
+                        Visual observation {String(candidate.reframe_suggestion.observation_index ?? "—")}
+                        {" · "}
+                        {Math.round(Number(candidate.reframe_suggestion.confidence ?? 0) * 100)}% evidence
+                        {" · "}
+                        no identity matching
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
               </View>
             ))}
 
@@ -1008,6 +1050,13 @@ function formatQaTime(value: number) {
   return `${minutes}:${remainder.toFixed(1).padStart(4, "0")}`;
 }
 
+
+function reframeLabel(strategy: unknown) {
+  if (strategy === "single_visible_subject") return "single visible subject";
+  if (strategy === "visible_speaking_cue") return "visible speaking cue";
+  return "visual evidence";
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   header: {
@@ -1195,6 +1244,20 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  reframeEvidence: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "flex-start",
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.aiAccentMuted,
+  },
+  tinyEvidence: {
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: "500",
   },
   replaceWarning: {
     flexDirection: "row",
