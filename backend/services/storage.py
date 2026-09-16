@@ -48,6 +48,9 @@ class StorageBackend(ABC):
     @abstractmethod
     def upload_file(self, key: str, source: Path, content_type: str | None = None) -> None: ...
 
+    @abstractmethod
+    def healthcheck(self) -> dict: ...
+
     @staticmethod
     def _build_key(user_id: str, kind: str, asset_id: str, ext: str) -> str:
         safe_ext = ext.lstrip(".").lower() or "bin"
@@ -113,6 +116,18 @@ class LocalStorage(StorageBackend):
         destination = self.local_path(key)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(source.read_bytes())
+
+    def healthcheck(self) -> dict:
+        self.root.mkdir(parents=True, exist_ok=True)
+        probe = self.root / ".shortcut-health"
+        try:
+            probe.write_text("ok", encoding="utf-8")
+            readable = probe.read_text(encoding="utf-8") == "ok"
+        finally:
+            probe.unlink(missing_ok=True)
+        if not readable:
+            raise RuntimeError("local storage healthcheck failed")
+        return {"backend": "local", "ok": True}
 
 
 class S3Storage(StorageBackend):
@@ -181,6 +196,10 @@ class S3Storage(StorageBackend):
             self.client.upload_file(str(source), self.bucket, key, ExtraArgs=extra)
         else:
             self.client.upload_file(str(source), self.bucket, key)
+
+    def healthcheck(self) -> dict:
+        self.client.head_bucket(Bucket=self.bucket)
+        return {"backend": "s3", "bucket": self.bucket, "ok": True}
 
 
 _storage: StorageBackend | None = None
