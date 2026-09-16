@@ -25,6 +25,7 @@ class NarrativeProvider(Protocol):
         project: dict,
         candidates: list[dict],
         target_audience: str | None,
+        project_intelligence: dict | None = None,
     ) -> dict: ...
 
 
@@ -38,6 +39,7 @@ def deterministic_structure(
     project: dict,
     candidates: list[dict],
     target_audience: str | None,
+    project_intelligence: dict | None = None,
 ) -> dict:
     if not candidates:
         return {
@@ -108,7 +110,14 @@ def deterministic_structure(
         "audience_profile": audience_profile,
         "narrative_summary": (
             "Open with the strongest grounded hook, progress through supporting "
-            "moments in source chronology, and close on a payoff/takeaway."
+            "evidence across the project"
+            + (
+                f" and its {len(project_intelligence.get('topic_clusters') or [])} "
+                "identified topic clusters"
+                if project_intelligence
+                else ""
+            )
+            + ", and close on a payoff/takeaway."
         ),
         "ordered_keys": [_candidate_key(item) for item in ordered],
         "roles": roles,
@@ -127,6 +136,7 @@ class OpenAINarrativeProvider:
         project: dict,
         candidates: list[dict],
         target_audience: str | None,
+        project_intelligence: dict | None = None,
     ) -> dict:
         if not settings.OPENAI_API_KEY:
             raise NarrativePlanningError("OPENAI_API_KEY is required for narrative planning")
@@ -148,6 +158,19 @@ class OpenAINarrativeProvider:
                 "content_type": project.get("content_type"),
                 "desired_style": project.get("desired_style"),
                 "target_platforms": project.get("target_platforms") or [],
+            },
+            "project_intelligence": {
+                "summary": (project_intelligence or {}).get("summary"),
+                "topic_clusters": [
+                    {
+                        "id": topic.get("id"),
+                        "label": topic.get("label"),
+                        "unit_count": topic.get("unit_count"),
+                        "asset_ids": topic.get("asset_ids") or [],
+                    }
+                    for topic in ((project_intelligence or {}).get("topic_clusters") or [])[:8]
+                ],
+                "visual_library": (project_intelligence or {}).get("visual_library") or {},
             },
             "candidates": candidate_rows,
             "rules": [
@@ -238,6 +261,7 @@ async def structure_narrative(
     project: dict,
     candidates: list[dict],
     target_audience: str | None,
+    project_intelligence: dict | None = None,
 ) -> dict:
     provider = settings.NARRATIVE_PROVIDER.lower()
     if provider == "deterministic":
@@ -246,6 +270,7 @@ async def structure_narrative(
             project=project,
             candidates=candidates,
             target_audience=target_audience,
+            project_intelligence=project_intelligence,
         )
     if provider == "openai":
         return await OpenAINarrativeProvider().structure(
