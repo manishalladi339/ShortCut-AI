@@ -47,7 +47,6 @@ export default function AIDirectorScreen() {
   const [objective, setObjective] = useState("");
   const [directorMode, setDirectorMode] = useState<"standard" | "multi_asset">("standard");
   const [targetDuration, setTargetDuration] = useState("45");
-  const [multiAssetMode, setMultiAssetMode] = useState(false);
   const [includeCaptions, setIncludeCaptions] = useState(true);
   const [removeDeadAir, setRemoveDeadAir] = useState(true);
   const [rhythmBroll, setRhythmBroll] = useState(true);
@@ -199,15 +198,15 @@ export default function AIDirectorScreen() {
       setStatusText("Building a grounded story and edit plan…");
 
       const duration = Number(targetDuration);
-      const maxDuration = multiAssetMode ? 900 : 300;
+      const maxDuration = directorMode === "multi_asset" ? 900 : 300;
       const resolvedDuration = Number.isFinite(duration)
         ? Math.max(5, Math.min(maxDuration, duration))
         : 45;
       const nextPlan = await aiPlansApi.create(project.id, {
         objective: objective.trim() || undefined,
-        director_mode: multiAssetMode ? "multi_asset" : "standard",
+        director_mode: directorMode === "multi_asset" ? "multi_asset" : "standard",
         target_duration_sec: resolvedDuration,
-        max_clips: multiAssetMode
+        max_clips: directorMode === "multi_asset"
           ? Math.min(80, Math.max(12, Math.ceil(resolvedDuration / 7)))
           : 8,
         min_source_assets: 3,
@@ -350,7 +349,7 @@ export default function AIDirectorScreen() {
   }
 
   const isBusy = phase !== "idle";
-  const canBuild = readyVideoAssets.length > 0 && pendingAssets.length === 0;
+  const canBuild = mediaAssets.length > 0 && pendingAssets.length === 0;
   const timelineHasClips = hasVideoClips(state);
   const canApply =
     plan?.status === "proposed" &&
@@ -474,22 +473,6 @@ export default function AIDirectorScreen() {
           />
 
           <ToggleRow
-            label="Multi-Asset Director Mode"
-            value={multiAssetMode}
-            onValueChange={setMultiAssetMode}
-          />
-          <Text
-            style={[
-              typography.caption,
-              { color: colors.textLow, marginTop: spacing.xs },
-            ]}
-          >
-            Balances story moments across multiple spoken sources and uses analyzed
-            videos/images as grounded visual support. Long-form plans can target up to
-            900 seconds.
-          </Text>
-
-          <ToggleRow
             label="Grounded captions"
             value={includeCaptions}
             onValueChange={setIncludeCaptions}
@@ -525,13 +508,13 @@ export default function AIDirectorScreen() {
           <MetricRow
             icon="videocam-outline"
             label="Ready video"
-            value={String(readyVideoAssets.length)}
-            ok={readyVideoAssets.length > 0}
+            value={String(mediaAssets.length)}
+            ok={mediaAssets.length > 0}
           />
           <MetricRow
             icon="image-outline"
             label="Ready images"
-            value={String(readyImageAssets.length)}
+            value={String(imageAssets.length)}
             ok={true}
           />
           <MetricRow
@@ -1494,14 +1477,6 @@ const styles = StyleSheet.create({
   modeButtonActive: {
     borderColor: colors.aiAccent,
     backgroundColor: colors.aiAccentMuted,
-  },
-  sourceMixRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
   },
   replaceWarning: {
     flexDirection: "row",
