@@ -12,6 +12,7 @@ from copy import deepcopy
 from typing import Any
 
 from models.project_state import ProjectStateDocument
+from services.scoped_pacing import apply_retime_scope, pacing_operations
 
 
 def _active_sequence(state: dict) -> dict:
@@ -641,6 +642,7 @@ def build_constrained_proposal(
     intents: list[str] = []
     operations: list[dict] = []
     for planner in (
+        pacing_operations,
         _speaker_removal_operations,
         _caption_operations,
         _broll_operations,
@@ -660,9 +662,10 @@ def build_constrained_proposal(
 
     if not intents:
         raise ValueError(
-            "Create With Me currently supports diarized speaker removal with "
-            "sequence-wide ripple, semantic B-roll replacement/removal, caption "
-            "restyling/removal, and music volume/removal."
+            "Create With Me currently supports scoped pacing changes, diarized "
+            "speaker removal with sequence-wide ripple, semantic B-roll "
+            "replacement/removal, caption restyling/removal, and music "
+            "volume/removal."
         )
     if not operations:
         raise ValueError(
@@ -734,6 +737,12 @@ def apply_constrained_operations(
 
         op = operation.get("operation")
         component = operation.get("component")
+
+        if op == "retime_scope":
+            if component != "story":
+                raise ValueError("Pacing operation has invalid component")
+            apply_retime_scope(sequence, payload)
+            continue
 
         if op == "remove_speaker_ripple":
             if component != "story":
