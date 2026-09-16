@@ -41,12 +41,40 @@ class AudioDucking(BaseModel):
     makeup: float = Field(default=1.0, ge=1.0, le=64.0)
 
 
+class TransformKeyframe(BaseModel):
+    """Transform keyframe at normalized clip progress from 0.0 to 1.0."""
+
+    at: float = Field(ge=0.0, le=1.0)
+    scale: float = Field(gt=0.01, le=10.0)
+    position_x: float = 0.0
+    position_y: float = 0.0
+    easing: Literal["linear", "ease_in", "ease_out", "ease_in_out"] = "ease_in_out"
+
+
 class ClipTransform(BaseModel):
     scale: float = Field(default=1.0, gt=0.01, le=10.0)
     position_x: float = 0.0
     position_y: float = 0.0
     rotation_deg: float = Field(default=0.0, ge=-3600.0, le=3600.0)
     opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    keyframes: list[TransformKeyframe] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def keyframes_are_ordered(self) -> "ClipTransform":
+        if not self.keyframes:
+            return self
+        if len(self.keyframes) < 2:
+            raise ValueError("transform motion requires at least two keyframes")
+        if abs(self.keyframes[0].at) > 1e-9:
+            raise ValueError("transform keyframes must begin at progress 0")
+        if abs(self.keyframes[-1].at - 1.0) > 1e-9:
+            raise ValueError("transform keyframes must end at progress 1")
+        times = [item.at for item in self.keyframes]
+        if times != sorted(times) or len(times) != len(set(times)):
+            raise ValueError(
+                "transform keyframe progress values must be strictly increasing"
+            )
+        return self
 
 
 class CaptionCue(BaseModel):

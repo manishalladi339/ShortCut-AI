@@ -34,6 +34,7 @@ class ConstrainedEditOperation(BaseModel):
         "replace_broll",
         "retime_scope",
         "repair_caption",
+        "set_motion_keyframes",
     ]
     component: Literal["story", "broll", "music", "captions"]
     payload: dict[str, Any]
