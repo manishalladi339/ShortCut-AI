@@ -41,12 +41,34 @@ class AudioDucking(BaseModel):
     makeup: float = Field(default=1.0, ge=1.0, le=64.0)
 
 
+class TransformKeyframe(BaseModel):
+    """Relative transform keyframe inside a clip's rendered duration."""
+
+    at: int = Field(ge=0)
+    scale: float = Field(gt=0.01, le=10.0)
+    position_x: float = 0.0
+    position_y: float = 0.0
+    easing: Literal["linear", "ease_in_out"] = "ease_in_out"
+
+
 class ClipTransform(BaseModel):
     scale: float = Field(default=1.0, gt=0.01, le=10.0)
     position_x: float = 0.0
     position_y: float = 0.0
     rotation_deg: float = Field(default=0.0, ge=-3600.0, le=3600.0)
     opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    keyframes: list[TransformKeyframe] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def keyframes_are_ordered(self) -> "ClipTransform":
+        if not self.keyframes:
+            return self
+        if self.keyframes[0].at != 0:
+            raise ValueError("transform keyframes must begin at clip-relative tick 0")
+        times = [item.at for item in self.keyframes]
+        if times != sorted(times) or len(times) != len(set(times)):
+            raise ValueError("transform keyframe times must be strictly increasing")
+        return self
 
 
 class CaptionCue(BaseModel):
@@ -78,6 +100,8 @@ class Clip(BaseModel):
         for transition in (self.transition_in, self.transition_out):
             if transition and transition.duration > self.duration:
                 raise ValueError("transition duration cannot exceed clip duration")
+        if self.transform.keyframes and self.transform.keyframes[-1].at > self.duration:
+            raise ValueError("transform keyframe cannot extend beyond clip duration")
         return self
 
 
