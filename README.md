@@ -211,6 +211,7 @@ Production uses:
 - render worker
 - explicit HTTPS/CORS configuration
 - strong JWT secret
+- transactional password-reset email
 - dependency readiness checks
 
 Start from:
