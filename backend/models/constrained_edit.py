@@ -33,6 +33,7 @@ class ConstrainedEditOperation(BaseModel):
         "remove_speaker_ripple",
         "replace_broll",
         "retime_scope",
+        "repair_caption",
     ]
     component: Literal["story", "broll", "music", "captions"]
     payload: dict[str, Any]
