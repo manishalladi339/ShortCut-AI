@@ -87,6 +87,11 @@ async def create_export(
     body: ExportRequest,
     user: dict = Depends(get_current_user),
 ) -> ExportOut:
+    if not settings.RENDERS_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": {"code": "render.disabled", "message": "Rendering is temporarily unavailable"}},
+        )
     await enforce_rate_limit(
         scope="render.create",
         key=user["id"],
