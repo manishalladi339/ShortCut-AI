@@ -33,9 +33,6 @@ class LoginBody(BaseModel):
     password: str
 
 
-class GoogleAuthBody(BaseModel):
-    session_token: str = Field(min_length=10)
-
 
 class RefreshBody(BaseModel):
     refresh_token: str
