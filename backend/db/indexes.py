@@ -25,6 +25,8 @@ async def ensure_indexes() -> None:
     await db.sessions.create_index("refresh_token_hash", unique=True)
     await db.sessions.create_index("expires_at", expireAfterSeconds=0)
 
+    await db.rate_limits.create_index("expires_at", expireAfterSeconds=0)
+
     await db.projects.create_index("user_id")
     await db.projects.create_index([("user_id", 1), ("archived", 1), ("updated_at", -1)])
     await db.projects.create_index("status")
@@ -82,9 +84,7 @@ async def ensure_indexes() -> None:
     )
 
     await db.project_intelligence.create_index("project_id", unique=True)
-    await db.project_intelligence.create_index(
-        [("user_id", 1), ("updated_at", -1)]
-    )
+    await db.project_intelligence.create_index([("user_id", 1), ("updated_at", -1)])
 
     await db.creator_memories.create_index("user_id", unique=True)
     await db.creator_memories.create_index([("updated_at", -1)])
