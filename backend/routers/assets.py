@@ -126,11 +126,16 @@ async def confirm_upload(
             status_code=400,
             detail={"error": {"code": "asset.empty", "message": "Uploaded file is empty"}},
         )
-    await enforce_confirmed_upload_size(
-        user_id=user["id"],
-        asset_id=asset_id,
-        actual_bytes=actual_size,
-    )
+    try:
+        await enforce_confirmed_upload_size(
+            user_id=user["id"],
+            asset_id=asset_id,
+            actual_bytes=actual_size,
+        )
+    except HTTPException:
+        storage.delete(doc["storage_key"])
+        await db.assets.delete_one({"id": asset_id, "user_id": user["id"]})
+        raise
 
     # Confirmation is idempotent: do not enqueue duplicate processing jobs.
     if doc.get("upload_status") == UploadStatus.uploaded.value and doc.get("processing_job_id"):
@@ -232,7 +237,9 @@ async def delete_asset(asset_id: str, user: dict = Depends(get_current_user)) ->
             detail={"error": {"code": "resource.not_found", "message": "Asset not found"}},
         )
 
-    get_storage().delete(doc["storage_key"])
+    storage = get_storage()
+    storage.delete(doc["storage_key"])
+    storage.delete_prefix(f"users/{user['id']}/derived/{asset_id}/")
     await db.jobs.delete_many({"asset_id": asset_id, "user_id": user["id"]})
     await db.assets.delete_one({"id": asset_id, "user_id": user["id"]})
     return {"ok": True}
