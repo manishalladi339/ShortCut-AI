@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
+import shutil
 from tempfile import TemporaryDirectory
 from typing import Iterator
 
@@ -50,6 +51,9 @@ class StorageBackend(ABC):
 
     @abstractmethod
     def healthcheck(self) -> dict: ...
+
+    @abstractmethod
+    def delete_prefix(self, prefix: str) -> int: ...
 
     @staticmethod
     def _build_key(user_id: str, kind: str, asset_id: str, ext: str) -> str:
@@ -116,6 +120,17 @@ class LocalStorage(StorageBackend):
         destination = self.local_path(key)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(source.read_bytes())
+
+    def delete_prefix(self, prefix: str) -> int:
+        path = self.local_path(prefix)
+        if not path.exists():
+            return 0
+        if path.is_file():
+            path.unlink()
+            return 1
+        count = sum(1 for item in path.rglob("*") if item.is_file())
+        shutil.rmtree(path)
+        return count
 
     def healthcheck(self) -> dict:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -196,6 +211,22 @@ class S3Storage(StorageBackend):
             self.client.upload_file(str(source), self.bucket, key, ExtraArgs=extra)
         else:
             self.client.upload_file(str(source), self.bucket, key)
+
+    def delete_prefix(self, prefix: str) -> int:
+        paginator = self.client.get_paginator("list_objects_v2")
+        deleted = 0
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            objects = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+            if not objects:
+                continue
+            for start in range(0, len(objects), 1000):
+                batch = objects[start : start + 1000]
+                response = self.client.delete_objects(
+                    Bucket=self.bucket,
+                    Delete={"Objects": batch, "Quiet": True},
+                )
+                deleted += len(batch) - len(response.get("Errors", []))
+        return deleted
 
     def healthcheck(self) -> dict:
         self.client.head_bucket(Bucket=self.bucket)
