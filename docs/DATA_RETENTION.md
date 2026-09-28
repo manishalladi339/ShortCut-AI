@@ -1,38 +1,48 @@
 # Data Retention and Deletion
 
-## Active data
+## Active account data
 
-ShortCut keeps account, project, timeline, job, AI-plan and media records while needed to provide an active account.
+ShortCut keeps account, project, timeline, AI-plan, job and media records while
+needed to provide an active account.
 
 ## Automatic expiry
 
-- sessions expire through a MongoDB TTL index;
-- password-reset records expire through a MongoDB TTL index;
-- rate-limit buckets expire through a MongoDB TTL index;
-- presigned object URLs expire automatically.
+MongoDB TTL indexes automatically expire:
+
+- sessions;
+- password-reset records;
+- rate-limit buckets.
+
+Presigned object URLs expire automatically.
 
 ## User deletion
 
 Users can permanently delete their account from Profile.
 
-Deletion is refused while jobs are queued or running to avoid workers recreating data after deletion. Once no active jobs remain, ShortCut:
+The account-deletion service removes queued/running job records first, revokes
+sessions and removes the user identity so no new authenticated work can be queued.
+Workers use lease fencing: once the job record/lease is gone, stale workers cannot
+commit durable results. Worker cleanup also removes objects produced after lease loss.
 
-1. enumerates original uploads, media derivatives and completed exports;
-2. removes those objects from configured storage;
-3. removes sessions, reset records, projects, timeline history, assets, jobs, exports, intelligence, AI proposals/plans, creator memory and audit logs;
-4. deletes the user record.
+The deletion service then removes user-scoped application collections and deletes
+the entire private object-storage prefix:
 
-If object-storage cleanup fails, database deletion does not proceed and the user is told to retry.
+`users/<user_id>/`
 
-## Production infrastructure retention
+This covers original uploads, derived media and exports stored beneath that prefix.
 
-Before public launch, configure:
+## Provider and infrastructure retention
 
-- S3 lifecycle rules for abandoned/temporary objects;
-- MongoDB backup retention;
+Before public launch configure and document:
+
+- MongoDB backup retention and restore procedure;
+- S3 lifecycle rules for abandoned/old objects;
 - log retention;
 - Sentry event retention;
-- provider-side AI data controls;
+- AI-provider data controls;
 - disaster-recovery snapshots.
 
-These durations depend on the production providers and legal requirements and therefore cannot be finalized inside the repository alone.
+Short-lived infrastructure backups or provider security logs may persist after an
+in-product deletion until their configured retention periods expire. The published
+Privacy Policy must accurately describe those periods once production providers are
+finalized.
