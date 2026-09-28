@@ -10,6 +10,7 @@ on:
       - ".github/workflows/release-ci.yml"
       - "deploy/**"
       - "scripts/production_smoke.py"
+      - "scripts/production_smoke.py"
   push:
     branches: [main]
     paths:
