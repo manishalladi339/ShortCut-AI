@@ -105,6 +105,7 @@ async def process_one() -> bool:
 
     db = get_db()
     export_id = job.get("payload", {}).get("export_id")
+    uploaded_storage_key: str | None = None
     try:
         export = await db.exports.find_one({"id": export_id}, {"_id": 0})
         if not export:
@@ -189,6 +190,7 @@ async def process_one() -> bool:
                 output,
                 content_type="video/mp4",
             )
+            uploaded_storage_key = storage_key
             # Fence completion after the potentially slow upload. If the lease
             # expired, this attempt must not commit export/job state.
             await _progress(job, 95)
@@ -240,6 +242,10 @@ async def process_one() -> bool:
         return True
 
     except Exception as exc:
+        if uploaded_storage_key and not await job_service.lease_active(
+            job["id"], lease_token=job.get("lease_token")
+        ):
+            get_storage().delete(uploaded_storage_key)
         final = int(job["attempt"]) >= int(job["max_attempts"])
         owned = await job_service.fail(
             job,
