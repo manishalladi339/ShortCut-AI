@@ -1,32 +1,48 @@
 # Production Deployment
 
-ShortCut AI production beta runs one API service plus three worker roles against
-shared MongoDB and S3-compatible object storage.
+ShortCut AI public beta runs one API service plus three worker roles against external MongoDB and private S3-compatible object storage. Caddy terminates HTTPS in front of the API.
 
-## Runtime topology
+## Topology
 
-- **API** — FastAPI auth/projects/editor/render endpoints.
+- **Caddy** — public ports 80/443, automatic HTTPS, reverse proxy.
+- **API** — FastAPI auth/projects/editor/render endpoints; loopback/internal only.
 - **Media worker** — probes uploads and creates derivatives.
 - **Intelligence worker** — transcription, scene/vision analysis and embeddings.
 - **Render worker** — FFmpeg rendering, audio mastering and Export QA.
-- **MongoDB** — durable application state and job queue.
-- **S3-compatible storage** — shared uploads, derivatives and rendered exports.
-
-Do not use local filesystem storage across independent production containers.
+- **MongoDB** — durable application state, rate limits and job queue.
+- **S3-compatible storage** — uploads, derivatives and exports.
+- **Sentry** — error/performance monitoring.
+- **Resend** — password-reset email.
 
 ## Prerequisites
 
-1. External MongoDB with backups enabled.
-2. S3 bucket in the deployment region.
-3. OpenAI API key for the configured transcription/vision/embedding providers.
-4. Resend account/API key and a verified sender for password-reset mail.
-5. HTTPS domain for the API.
-6. Exact frontend origins for CORS.
-7. A strong random JWT secret.
+1. Domain/subdomain for the API.
+2. Server with Docker/Compose and public 80/443.
+3. External MongoDB with backups.
+4. Private S3 bucket.
+5. OpenAI API key with budget alerts.
+6. Resend verified sender.
+7. Sentry project/DSN.
+8. Exact frontend origin.
+9. Strong random JWT secret.
 
-The S3 workload identity should permit the object operations ShortCut uses and bucket
-health checks. At minimum this normally means object Get/Put/Delete plus bucket
-metadata/list permission required by `HeadBucket`.
+## DNS
+
+Point the API hostname to the server before starting Caddy.
+
+Example:
+
+`api.example.com -> server public IP`
+
+Caddy obtains and renews TLS certificates automatically after DNS resolves and ports 80/443 are reachable.
+
+## S3
+
+Keep the bucket private. Apply a browser CORS rule equivalent to `deploy/s3-cors.json`, replacing the example origin with the real frontend origin.
+
+Prefer an instance/workload role. If static credentials are unavoidable, grant only the bucket/object operations ShortCut requires.
+
+Configure lifecycle rules for temporary/abandoned objects and enable encryption/backups/versioning as appropriate.
 
 ## Configure
 
@@ -34,38 +50,30 @@ metadata/list permission required by `HeadBucket`.
 cp .env.production.example .env.production
 ```
 
-Replace every placeholder. Production startup refuses:
+Replace every placeholder.
 
-- weak JWT secrets;
+Production startup refuses unsafe settings including:
+
+- weak JWT secret;
 - wildcard CORS;
-- non-HTTPS public API URLs;
+- non-HTTPS public API URL;
+- disabled rate limiting;
 - local storage;
 - missing S3 bucket;
-- missing OpenAI key when an OpenAI provider is enabled.
+- placeholder/missing OpenAI key when OpenAI providers are enabled;
+- placeholder/missing Sentry DSN;
+- missing Resend configuration.
 
 Never commit `.env.production`.
 
-### Password-reset delivery
-
-Production refuses to boot unless password-reset email delivery is configured.
-The current provider is Resend.
-
-Set:
-
-- `PASSWORD_RESET_EMAIL_PROVIDER=resend`
-- `RESEND_API_KEY`
-- `PASSWORD_RESET_FROM_EMAIL`
-- `PASSWORD_RESET_URL_TEMPLATE` containing the literal `{token}`
-
-The reset URL can point to a web route or the `shortcutai://` mobile deep link.
-Tokens are stored only as hashes in production. If email delivery fails, the
-undelivered reset record is invalidated and the public endpoint still returns the
-same generic response to avoid account enumeration.
-
-## Validate the compose file
+## Validate
 
 ```bash
 docker compose -f docker-compose.prod.yml config
+docker run --rm \
+  -e SHORTCUT_API_DOMAIN=api.example.com \
+  -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
 ```
 
 ## Start
@@ -74,30 +82,35 @@ docker compose -f docker-compose.prod.yml config
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-The API container runs as a non-root user and has an internal liveness healthcheck.
+The API remains available locally at `127.0.0.1:8001` for diagnostics, while internet traffic uses Caddy over HTTPS.
 
-## Health endpoints
-
-Process liveness:
+## Health
 
 ```bash
 curl -fsS https://api.example.com/api/v1/live
-```
-
-Dependency readiness:
-
-```bash
 curl -fsS https://api.example.com/api/v1/ready
 ```
 
-Readiness checks MongoDB and storage. A dependency failure returns HTTP 503.
+Readiness verifies MongoDB and object storage and returns HTTP 503 when a dependency is unavailable.
 
-The legacy `/api/v1/health` endpoint remains a liveness alias for compatibility.
+## Public-beta limits
+
+Defaults are configurable in `.env.production`:
+
+- 1 GiB maximum single upload;
+- 10 GiB user storage cap;
+- 60-minute maximum input media duration;
+- auth/upload/AI/render per-minute rate limits;
+- 20 media-intelligence jobs/day for free users;
+- 10 renders/day for free users;
+- 30 AI-edit requests/day for free users;
+- 2 concurrent renders per free user.
+
+Tune these only after observing real cost and queue data.
 
 ## Worker scaling
 
-Workers claim jobs through MongoDB leases, so multiple replicas can safely compete
-for queued work.
+Workers claim jobs through MongoDB leases.
 
 Examples:
 
@@ -106,81 +119,28 @@ docker compose -f docker-compose.prod.yml up -d --scale render-worker=2
 docker compose -f docker-compose.prod.yml up -d --scale intelligence-worker=2
 ```
 
-Render workers are the most CPU/RAM intensive. Do not colocate too many FFmpeg jobs
-on a small host.
+Render workers are CPU/RAM intensive. Scale based on measured queue depth and host capacity.
 
-## Crash recovery
+## Monitoring
 
-Running jobs carry lease tokens and expiration timestamps.
+Configure Sentry alerts for new errors and elevated error rates. Ship container logs to the hosting provider/log aggregator.
 
-When a worker disappears:
-- expired work is requeued while retry budget remains;
-- exhausted work becomes terminally failed;
-- stale workers cannot commit after ownership moved;
-- completed media/intelligence can be reconciled without repeating expensive work;
-- succeeded render job results can repair incomplete export rows.
+Monitor:
 
-## Logs and request tracing
+- worker failures and retries;
+- queue depth;
+- OpenAI latency/errors/spend;
+- render latency;
+- server CPU/RAM/disk;
+- Mongo/S3 readiness;
+- rate-limit spikes.
 
-Every API response includes `X-Request-ID`.
+## Backups and retention
 
-API logs include:
-- request ID;
-- method/path;
-- HTTP status;
-- elapsed milliseconds.
+Enable MongoDB backups/snapshots and test restore procedures.
 
-Pass your platform request ID as `X-Request-ID` to correlate edge/API logs.
+Configure S3 lifecycle/retention and backup policies. See `docs/DATA_RETENTION.md`.
 
-Worker logs should be shipped to your platform log aggregator.
+## Release checklist
 
-## Storage durability
-
-Rendered outputs and uploads live in S3. Configure:
-- versioning if appropriate;
-- lifecycle/retention rules for old exports;
-- encryption at rest;
-- blocked public access;
-- least-privilege workload credentials.
-
-Presigned URLs provide upload/download access; the bucket should remain private.
-
-## MongoDB durability
-
-Enable managed backups or snapshots. Collections contain:
-- users/sessions;
-- projects and canonical ProjectState;
-- media intelligence;
-- AI plans and constrained proposals;
-- job queue state;
-- exports and QA reports;
-- audit logs.
-
-## Quotas
-
-The free beta defaults to 3 projects per UTC calendar month.
-
-Quota consumption:
-- resets automatically when the UTC month changes;
-- is atomic across concurrent requests;
-- applies to new projects and duplicates;
-- rolls back best-effort if project persistence fails.
-
-Paid plans remain disabled until billing is intentionally enabled.
-
-## Rollout checklist
-
-Before opening the beta:
-
-1. `backend-ci` and `frontend-ci` green on the release commit.
-2. Production env validation passes.
-3. `/api/v1/ready` returns 200.
-4. Upload a real video and image.
-5. Wait for Media Intelligence to complete.
-6. Build and review an AI Director plan.
-7. Apply to canonical ProjectState.
-8. Render a vertical 1080p export.
-9. Verify audio mastering and Export QA.
-10. Run a QA repair and re-render.
-11. Test worker restart during a queued/running job.
-12. Verify S3 export URL and Mongo backup policy.
+See `docs/PUBLIC_BETA_RELEASE.md`. Do not open the beta until the mandatory deployed real-video smoke test has passed.
