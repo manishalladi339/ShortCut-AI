@@ -1,7 +1,3 @@
-{
-  email {$ACME_EMAIL:}
-}
-
 {$SHORTCUT_API_DOMAIN} {
   encode zstd gzip
 
