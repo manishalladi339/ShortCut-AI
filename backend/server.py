@@ -6,8 +6,10 @@ import logging
 import time
 import uuid
 
+import sentry_sdk
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
@@ -30,6 +32,7 @@ from routers.render import router as render_router
 from routers.retrieval import router as retrieval_router
 from routers.projects import router as projects_router
 from routers.users import router as users_router
+from services.public_beta_guard import check_public_beta_guard
 from services.storage import get_storage
 
 logging.basicConfig(
@@ -37,6 +40,15 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
 )
 logger = logging.getLogger("shortcut")
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.ENVIRONMENT,
+        integrations=[FastApiIntegration()],
+        traces_sample_rate=max(0.0, min(1.0, settings.SENTRY_TRACES_SAMPLE_RATE)),
+        send_default_pii=False,
+    )
 
 app = FastAPI(title="ShortCut AI", version="1.0.0")
 
@@ -50,11 +62,68 @@ app.add_middleware(
 )
 
 
+def _security_headers(response) -> None:
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=()",
+    )
+    if settings.ENVIRONMENT == "production":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+
+
 @app.middleware("http")
 async def request_context(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
     started = time.perf_counter()
+
+    # The old Emergent social-login bridge is intentionally disabled for public beta.
+    # Email/password auth is first-party; Google OAuth can be reintroduced only with
+    # ShortCut-owned Google credentials.
+    if request.method == "POST" and request.url.path == "/api/v1/auth/google":
+        response = JSONResponse(
+            status_code=410,
+            content={
+                "error": {
+                    "code": "auth.google_disabled",
+                    "message": "Google sign-in is not enabled for this release.",
+                },
+                "request_id": request_id,
+            },
+        )
+        response.headers["X-Request-ID"] = request_id
+        _security_headers(response)
+        return response
+
+    try:
+        rejected = await check_public_beta_guard(request)
+    except Exception:
+        # Guard failures are observable, but must not turn a transient counter
+        # failure into a complete API outage.
+        logger.exception("public_beta_guard_failed request_id=%s", request_id)
+        rejected = None
+
+    if rejected is not None:
+        response = JSONResponse(
+            status_code=rejected.status_code,
+            content={
+                "error": {
+                    "code": rejected.code,
+                    "message": rejected.message,
+                },
+                "request_id": request_id,
+            },
+            headers={"Retry-After": str(rejected.retry_after)},
+        )
+        response.headers["X-Request-ID"] = request_id
+        _security_headers(response)
+        return response
+
     try:
         response = await call_next(request)
     except Exception:
@@ -70,6 +139,7 @@ async def request_context(request: Request, call_next):
 
     elapsed_ms = (time.perf_counter() - started) * 1000
     response.headers["X-Request-ID"] = request_id
+    _security_headers(response)
     logger.info(
         "request request_id=%s method=%s path=%s status=%s elapsed_ms=%.2f",
         request_id,
@@ -89,7 +159,9 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     else:
         body = {"error": {"code": "http_error", "message": str(detail)}}
     body.setdefault("request_id", getattr(request.state, "request_id", None))
-    return JSONResponse(status_code=exc.status_code, content=body)
+    response = JSONResponse(status_code=exc.status_code, content=body)
+    _security_headers(response)
+    return response
 
 
 api = APIRouter(prefix="/api")
@@ -110,7 +182,6 @@ api_v1.include_router(intelligence_router)
 api_v1.include_router(retrieval_router)
 api_v1.include_router(jobs_router)
 
-# Local-storage upload/download routes are intentionally unavailable in production.
 if settings.ENVIRONMENT != "production":
     api_v1.include_router(local_storage_router)
 
@@ -134,10 +205,7 @@ async def _readiness() -> tuple[bool, dict]:
         checks["mongo"] = {"ok": True}
     except Exception as exc:
         ready = False
-        checks["mongo"] = {
-            "ok": False,
-            "error": type(exc).__name__,
-        }
+        checks["mongo"] = {"ok": False, "error": type(exc).__name__}
 
     try:
         checks["storage"] = await asyncio.to_thread(get_storage().healthcheck)
@@ -157,7 +225,6 @@ async def _readiness() -> tuple[bool, dict]:
 @api.get("/live")
 @api_v1.get("/live")
 async def live():
-    # Backward-compatible health route remains a process liveness check.
     return {"ok": True}
 
 
