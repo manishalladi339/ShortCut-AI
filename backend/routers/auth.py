@@ -93,6 +93,16 @@ async def _new_tokens(user_id: str) -> TokenPair:
 
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def signup(body: SignupBody) -> AuthResponse:
+    if not body.accept_terms:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "auth.terms_required",
+                    "message": "You must accept the Terms and Privacy Policy to create an account.",
+                }
+            },
+        )
     db = get_db()
     email = body.email.lower().strip()
     if await db.users.find_one({"email": email}, {"_id": 0, "id": 1}):
@@ -117,6 +127,8 @@ async def signup(body: SignupBody) -> AuthResponse:
         "onboarding_complete": False,
         "user_type": None,
         "niche": [],
+        "terms_version": settings.TERMS_VERSION,
+        "terms_accepted_at": utc_now(),
         "created_at": utc_now(),
         "updated_at": utc_now(),
     }
