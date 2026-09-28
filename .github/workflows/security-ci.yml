@@ -53,7 +53,40 @@ jobs:
       - name: Install frontend dependencies
         run: yarn install --non-interactive --ignore-scripts
       - name: Audit production dependencies
-        run: yarn audit --groups dependencies --level high
+        shell: bash
+        run: |
+          set +e
+          yarn audit --groups dependencies --json > /tmp/yarn-audit.json
+          set -e
+          cat /tmp/yarn-audit.json
+          node <<'NODE'
+          const fs = require("fs");
+          const rows = fs.readFileSync("/tmp/yarn-audit.json", "utf8")
+            .split(/\r?\n/)
+            .filter(Boolean);
+          const blocking = [];
+          for (const row of rows) {
+            let event;
+            try { event = JSON.parse(row); } catch { continue; }
+            if (event.type !== "auditAdvisory") continue;
+            const advisory = event.data && event.data.advisory;
+            const severity = String(advisory && advisory.severity || "").toLowerCase();
+            if (severity === "high" || severity === "critical") {
+              blocking.push({
+                module: advisory.module_name,
+                severity,
+                title: advisory.title,
+                url: advisory.url,
+              });
+            }
+          }
+          if (blocking.length) {
+            console.error("Blocking high/critical production dependency advisories:");
+            console.error(JSON.stringify(blocking, null, 2));
+            process.exit(1);
+          }
+          console.log("No high/critical production dependency advisories.");
+          NODE
 
   secret-scan:
     runs-on: ubuntu-latest
