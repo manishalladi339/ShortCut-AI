@@ -175,6 +175,9 @@ async def process_one() -> bool:
         return True
 
     except (MediaProbeError, MediaDerivativeError) as exc:
+        get_storage().delete_prefix(
+            f"users/{job['user_id']}/derived/{job.get('asset_id')}/"
+        )
         final = job["attempt"] >= job["max_attempts"]
         owned = await job_service.fail(
             job,
@@ -188,6 +191,9 @@ async def process_one() -> bool:
         return True
 
     except Exception as exc:
+        get_storage().delete_prefix(
+            f"users/{job['user_id']}/derived/{job.get('asset_id')}/"
+        )
         final = job["attempt"] >= job["max_attempts"]
         owned = await job_service.fail(
             job,
