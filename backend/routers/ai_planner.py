@@ -31,6 +31,11 @@ async def create_ai_edit_plan(
     body: CreateAIEditPlanRequest,
     user: dict = Depends(get_current_user),
 ) -> AIEditPlanOut:
+    if not settings.AI_FEATURES_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": {"code": "ai.disabled", "message": "AI editing is temporarily unavailable"}},
+        )
     await enforce_rate_limit(
         scope="ai.plan",
         key=user["id"],
