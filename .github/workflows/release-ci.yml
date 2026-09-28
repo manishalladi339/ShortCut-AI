@@ -9,6 +9,7 @@ on:
       - ".env.production.example"
       - ".github/workflows/release-ci.yml"
       - "deploy/**"
+      - "scripts/production_smoke.py"
   push:
     branches: [main]
     paths:
@@ -37,6 +38,9 @@ jobs:
             -e SHORTCUT_API_DOMAIN=api.shortcut.example \
             -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Validate production smoke script syntax
+        run: python -m py_compile scripts/production_smoke.py
 
       - name: Build backend production image
         run: docker build -t shortcut-ai-backend:ci ./backend
