@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import HTTPException, status
 
 from core.config import settings
+from core.security import utc_now
 from db.mongo import get_db
 
 
@@ -96,3 +97,55 @@ async def enforce_render_concurrency(*, user_id: str) -> None:
                 }
             },
         )
+
+
+async def _enforce_daily_free_limit(
+    *,
+    user: dict,
+    collection_name: str,
+    limit: int,
+    code: str,
+    message: str,
+) -> None:
+    """Cap cost-generating work per UTC day for free-beta accounts."""
+    if str(user.get("subscription_tier", "free")) != "free":
+        return
+    day_start = utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    count = await get_db()[collection_name].count_documents(
+        {"user_id": user["id"], "created_at": {"$gte": day_start}}
+    )
+    if count >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"error": {"code": code, "message": message}},
+        )
+
+
+async def enforce_daily_intelligence_limit(*, user: dict) -> None:
+    await _enforce_daily_free_limit(
+        user=user,
+        collection_name="media_intelligence",
+        limit=settings.MAX_DAILY_INTELLIGENCE_JOBS_FREE,
+        code="usage.daily_intelligence_limit",
+        message="Daily media-analysis limit reached for the free beta.",
+    )
+
+
+async def enforce_daily_render_limit(*, user: dict) -> None:
+    await _enforce_daily_free_limit(
+        user=user,
+        collection_name="exports",
+        limit=settings.MAX_DAILY_RENDER_JOBS_FREE,
+        code="usage.daily_render_limit",
+        message="Daily render limit reached for the free beta.",
+    )
+
+
+async def enforce_daily_ai_plan_limit(*, user: dict) -> None:
+    await _enforce_daily_free_limit(
+        user=user,
+        collection_name="ai_edit_plans",
+        limit=settings.MAX_DAILY_AI_PLANS_FREE,
+        code="usage.daily_ai_plan_limit",
+        message="Daily AI Director plan limit reached for the free beta.",
+    )
