@@ -10,7 +10,7 @@ ShortCut AI's public-beta baseline is designed around least privilege, isolated 
 - refresh-token rotation and revocation
 - hashed passwords and password-reset tokens
 - rate limiting for authentication, uploads, AI and renders
-- daily AI/render caps for free-beta accounts
+- per-window rate limits for AI analysis, AI planning and renders
 - concurrent-render caps
 - file-size, media-duration and per-user storage limits
 - exact CORS origin allowlist
