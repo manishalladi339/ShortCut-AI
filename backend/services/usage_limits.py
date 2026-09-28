@@ -37,6 +37,38 @@ async def enforce_upload_limits(*, user_id: str, requested_bytes: int) -> None:
         )
 
 
+async def enforce_confirmed_upload_size(
+    *, user_id: str, asset_id: str, actual_bytes: int
+) -> None:
+    if actual_bytes > settings.MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={
+                "error": {
+                    "code": "upload.file_too_large",
+                    "message": "The uploaded file exceeds the current size limit.",
+                }
+            },
+        )
+
+    pipeline = [
+        {"$match": {"user_id": user_id, "id": {"$ne": asset_id}}},
+        {"$group": {"_id": None, "total": {"$sum": "$size_bytes"}}},
+    ]
+    rows = await get_db().assets.aggregate(pipeline).to_list(1)
+    used = int(rows[0]["total"]) if rows else 0
+    if used + actual_bytes > settings.MAX_USER_STORAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={
+                "error": {
+                    "code": "upload.storage_quota_exceeded",
+                    "message": "Your current storage allowance has been reached.",
+                }
+            },
+        )
+
+
 def validate_media_duration(*, kind: str, duration_sec: float | None) -> None:
     if duration_sec is None:
         return
