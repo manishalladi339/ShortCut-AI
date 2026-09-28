@@ -22,6 +22,7 @@ from services import job_service
 from services.media_derivatives import MediaDerivativeError, generate as generate_derivatives
 from services.media_probe import MediaProbeError, probe
 from services.storage import get_storage, materialize
+from services.usage_limits import validate_media_duration
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("shortcut.media-worker")
@@ -131,6 +132,13 @@ async def process_one() -> bool:
         suffix = Path(asset["filename"]).suffix
         with materialize(asset["storage_key"], suffix=suffix) as local_path:
             metadata = probe(local_path)
+            try:
+                validate_media_duration(
+                    kind=asset.get("kind", ""),
+                    duration_sec=metadata.get("duration_sec"),
+                )
+            except ValueError as exc:
+                raise MediaProbeError(str(exc)) from exc
             await _progress(job, 45)
             derivatives = generate_derivatives(
                 source_path=local_path,
