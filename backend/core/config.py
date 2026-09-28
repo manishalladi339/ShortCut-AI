@@ -82,6 +82,7 @@ class Settings:
     AI_PLAN_RATE_LIMIT: int = int(os.environ.get("AI_PLAN_RATE_LIMIT", "20"))
     ANALYZE_RATE_LIMIT: int = int(os.environ.get("ANALYZE_RATE_LIMIT", "30"))
     RENDER_RATE_LIMIT: int = int(os.environ.get("RENDER_RATE_LIMIT", "10"))
+    UPLOAD_REQUEST_RATE_LIMIT: int = int(os.environ.get("UPLOAD_REQUEST_RATE_LIMIT", "60"))
     EXPENSIVE_ACTION_RATE_WINDOW_SEC: int = int(
         os.environ.get("EXPENSIVE_ACTION_RATE_WINDOW_SEC", "3600")
     )
