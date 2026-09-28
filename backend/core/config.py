@@ -74,6 +74,15 @@ class Settings:
     MAX_ACTIVE_RENDERS_PER_USER: int = int(
         os.environ.get("MAX_ACTIVE_RENDERS_PER_USER", "2")
     )
+    MAX_DAILY_INTELLIGENCE_JOBS_FREE: int = int(
+        os.environ.get("MAX_DAILY_INTELLIGENCE_JOBS_FREE", "20")
+    )
+    MAX_DAILY_RENDER_JOBS_FREE: int = int(
+        os.environ.get("MAX_DAILY_RENDER_JOBS_FREE", "10")
+    )
+    MAX_DAILY_AI_PLANS_FREE: int = int(
+        os.environ.get("MAX_DAILY_AI_PLANS_FREE", "30")
+    )
 
     AUTH_LOGIN_RATE_LIMIT: int = int(os.environ.get("AUTH_LOGIN_RATE_LIMIT", "10" if ENVIRONMENT == "production" else "10000"))
     AUTH_SIGNUP_RATE_LIMIT: int = int(os.environ.get("AUTH_SIGNUP_RATE_LIMIT", "5" if ENVIRONMENT == "production" else "10000"))
@@ -254,6 +263,12 @@ class Settings:
                 )
             if self.MAX_ACTIVE_RENDERS_PER_USER < 1:
                 raise RuntimeError("MAX_ACTIVE_RENDERS_PER_USER must be at least 1")
+            if min(
+                self.MAX_DAILY_INTELLIGENCE_JOBS_FREE,
+                self.MAX_DAILY_RENDER_JOBS_FREE,
+                self.MAX_DAILY_AI_PLANS_FREE,
+            ) < 1:
+                raise RuntimeError("Daily free-beta limits must be at least 1")
             if not (
                 self.SENTRY_DSN
                 and not self.SENTRY_DSN.upper().startswith("REPLACE_WITH")
