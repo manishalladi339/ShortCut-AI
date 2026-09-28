@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from "react-native";
@@ -22,6 +23,7 @@ export default function SignUp() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -29,6 +31,10 @@ export default function SignUp() {
     setErr(null);
     if (password.length < 8) {
       setErr("Password must be at least 8 characters");
+      return;
+    }
+    if (!accepted) {
+      setErr("Please accept the Terms and Privacy Policy");
       return;
     }
     setBusy(true);
@@ -88,12 +94,37 @@ export default function SignUp() {
               testID="auth-password-input"
               placeholder="At least 8 characters"
             />
+
+            <View style={styles.consentRow}>
+              <Switch
+                value={accepted}
+                onValueChange={setAccepted}
+                testID="signup-terms-switch"
+              />
+              <Text style={[typography.caption, { color: colors.textMedium, flex: 1 }]}>
+                I agree to the{" "}
+                <Text style={styles.link} onPress={() => router.push("/terms" as any)}>
+                  Terms of Service
+                </Text>{" "}
+                and{" "}
+                <Text style={styles.link} onPress={() => router.push("/privacy" as any)}>
+                  Privacy Policy
+                </Text>
+                .
+              </Text>
+            </View>
+
             {err ? (
               <Text style={[typography.caption, { color: colors.danger }]} testID="signup-error">
                 {err}
               </Text>
             ) : null}
-            <Button label="Create account" onPress={submit} loading={busy} testID="auth-signup-submit-button" />
+            <Button
+              label="Create account"
+              onPress={submit}
+              loading={busy}
+              testID="auth-signup-submit-button"
+            />
             <Pressable
               onPress={() => router.replace("/(auth)/sign-in")}
               testID="signup-go-signin"
@@ -114,4 +145,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   scroll: { paddingHorizontal: spacing.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xxxl },
   back: { paddingVertical: spacing.sm, marginBottom: spacing.lg },
+  consentRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  link: { color: colors.aiAccent, textDecorationLine: "underline" },
 });
