@@ -59,6 +59,23 @@ async def delete_me(user: dict = Depends(get_current_user)) -> dict:
     db = get_db()
     user_id = user["id"]
 
+    active_jobs = await db.jobs.count_documents(
+        {"user_id": user_id, "status": {"$in": ["queued", "running"]}}
+    )
+    if active_jobs:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "account.jobs_active",
+                    "message": (
+                        "Account deletion is temporarily blocked while media or render "
+                        "work is queued/running. Retry after current jobs finish."
+                    ),
+                }
+            },
+        )
+
     assets = await db.assets.find(
         {"user_id": user_id}, {"_id": 0, "storage_key": 1, "derivatives": 1}
     ).to_list(None)
