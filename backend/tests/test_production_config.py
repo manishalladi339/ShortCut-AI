@@ -86,3 +86,19 @@ def test_production_reset_url_template_must_contain_token(monkeypatch):
     )
     with pytest.raises(RuntimeError, match=r"\{token\}"):
         settings.validate_runtime()
+
+
+def test_production_google_auth_requires_client_ids(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(settings, "GOOGLE_AUTH_ENABLED", True)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_IDS", [])
+    with pytest.raises(RuntimeError, match="GOOGLE_CLIENT_IDS"):
+        settings.validate_runtime()
+
+
+def test_production_rejects_invalid_storage_limits(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(settings, "MAX_UPLOAD_BYTES", 1024)
+    monkeypatch.setattr(settings, "MAX_USER_STORAGE_BYTES", 512)
+    with pytest.raises(RuntimeError, match="storage limits"):
+        settings.validate_runtime()
