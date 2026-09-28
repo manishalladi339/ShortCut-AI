@@ -11,6 +11,9 @@ test("email user can sign up and create a project", async ({ page }) => {
   await page.getByTestId("auth-email-input").fill(email);
   await page.getByTestId("auth-password-input").fill("ReleaseTest123!");
   await page.getByTestId("auth-signup-submit-button").click();
+  await expect(page.getByTestId("signup-error")).toContainText("accept the Terms");
+  await page.getByTestId("signup-terms-switch").click();
+  await page.getByTestId("auth-signup-submit-button").click();
 
   await expect(page.getByTestId("dashboard-username")).toHaveText("Release Test");
 
@@ -21,4 +24,15 @@ test("email user can sign up and create a project", async ({ page }) => {
 
   await expect(page.getByTestId("project-upload-asset-button")).toBeVisible();
   await expect(page.getByTestId("project-detail-header-title")).toHaveText("Public Release Smoke");
+});
+
+
+test("legal pages are reachable before signup", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("welcome-signup-button").click();
+  await page.getByText("Terms of Service").click();
+  await expect(page.getByText("Terms of Service").first()).toBeVisible();
+  await page.goBack();
+  await page.getByText("Privacy Policy").click();
+  await expect(page.getByText("Privacy Policy").first()).toBeVisible();
 });
