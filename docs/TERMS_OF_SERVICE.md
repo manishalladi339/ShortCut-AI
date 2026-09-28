@@ -25,7 +25,7 @@ You are responsible for:
 - providing accurate registration information;
 - promptly notifying ShortCut of suspected unauthorized access.
 
-You may permanently delete your account through the product after active background jobs finish.
+You may permanently delete your account through the product. Deletion revokes user-scoped queued/running work and removes user-scoped application data and stored media.
 
 ## 4. Your content
 
