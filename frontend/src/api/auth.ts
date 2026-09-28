@@ -22,7 +22,11 @@ export interface AuthResponse {
 
 export const authApi = {
   signup: (email: string, password: string, name: string) =>
-    api<AuthResponse>("/auth/signup", { method: "POST", body: { email, password, name }, auth: false }),
+    api<AuthResponse>("/auth/signup", {
+      method: "POST",
+      body: { email, password, name, accept_terms: true },
+      auth: false,
+    }),
   login: (email: string, password: string) =>
     api<AuthResponse>("/auth/login", { method: "POST", body: { email, password }, auth: false }),
   google: (session_token: string) =>
