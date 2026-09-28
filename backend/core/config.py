@@ -148,10 +148,10 @@ class Settings:
         "PASSWORD_RESET_FROM_EMAIL", ""
     )
 
-    EMERGENT_AUTH_SESSION_URL: str = os.environ.get(
-        "EMERGENT_AUTH_SESSION_URL",
-        "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+    GOOGLE_AUTH_ENABLED: bool = (
+        os.environ.get("GOOGLE_AUTH_ENABLED", "false").lower() == "true"
     )
+    GOOGLE_CLIENT_IDS: list[str] = _csv_env("GOOGLE_CLIENT_IDS")
 
     STRIPE_PAID_PLANS_ENABLED: bool = (
         os.environ.get("STRIPE_PAID_PLANS_ENABLED", "false").lower() == "true"
@@ -225,6 +225,11 @@ class Settings:
             if "{token}" not in self.PASSWORD_RESET_URL_TEMPLATE:
                 raise RuntimeError(
                     "Production PASSWORD_RESET_URL_TEMPLATE must contain {token}"
+                )
+
+            if self.GOOGLE_AUTH_ENABLED and not self.GOOGLE_CLIENT_IDS:
+                raise RuntimeError(
+                    "GOOGLE_CLIENT_IDS is required when GOOGLE_AUTH_ENABLED=true"
                 )
 
             if self.MAX_UPLOAD_BYTES <= 0 or self.MAX_USER_STORAGE_BYTES < self.MAX_UPLOAD_BYTES:
