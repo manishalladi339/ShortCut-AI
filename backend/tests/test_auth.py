@@ -8,7 +8,7 @@ def test_signup_returns_user_and_tokens(api_url, session):
     email = f"test_{uuid.uuid4().hex[:10]}@shortcut.ai"
     r = session.post(
         f"{api_url}/auth/signup",
-        json={"email": email, "password": "Demo12345!", "name": "Auth Sign"},
+        json={"email": email, "password": "Demo12345!", "name": "Auth Sign", "accept_terms": True},
     )
     assert r.status_code == 201, r.text
     body = r.json()
@@ -20,7 +20,7 @@ def test_signup_returns_user_and_tokens(api_url, session):
 def test_signup_duplicate_email_409(api_url, session, fresh_user):
     r = session.post(
         f"{api_url}/auth/signup",
-        json={"email": fresh_user["email"], "password": "Anything123!", "name": "x"},
+        json={"email": fresh_user["email"], "password": "Anything123!", "name": "x", "accept_terms": True},
     )
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "auth.email_taken"
@@ -131,6 +131,7 @@ def test_delete_account_invalidates_access_and_releases_email(
             "email": fresh_user["email"],
             "password": "Demo12345!",
             "name": "Recreated User",
+            "accept_terms": True,
         },
     )
     assert recreated.status_code == 201, recreated.text
