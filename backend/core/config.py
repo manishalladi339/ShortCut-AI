@@ -77,6 +77,8 @@ class Settings:
         os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.05")
     )
 
+    TERMS_VERSION: str = os.environ.get("TERMS_VERSION", "2026-09-28").strip()
+
     # Storage
     STORAGE_BACKEND: str = os.environ.get(
         "STORAGE_BACKEND", os.environ.get("S3_BACKEND", "local")
