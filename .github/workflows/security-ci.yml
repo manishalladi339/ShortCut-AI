@@ -37,3 +37,32 @@ jobs:
         run: |
           python -m pip install --upgrade pip pip-audit
           pip-audit -r backend/requirements.txt
+
+  frontend-dependencies:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19"
+      - name: Enable Yarn
+        run: corepack enable
+      - name: Install frontend dependencies
+        run: yarn install --non-interactive --ignore-scripts
+      - name: Audit production dependencies
+        run: yarn audit --groups dependencies --level high
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
