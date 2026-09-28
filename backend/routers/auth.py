@@ -264,6 +264,16 @@ async def google_login(request: Request, body: GoogleAuthBody) -> AuthResponse:
         existing.update(update)
         user_doc = existing
     else:
+        if not body.accept_terms:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": {
+                        "code": "auth.terms_required",
+                        "message": "Accept the Terms of Service and Privacy Policy to create an account.",
+                    }
+                },
+            )
         user_doc = {
             "id": str(uuid.uuid4()),
             "email": google_email,
@@ -281,6 +291,8 @@ async def google_login(request: Request, body: GoogleAuthBody) -> AuthResponse:
             "onboarding_complete": False,
             "user_type": None,
             "niche": [],
+            "terms_version": settings.TERMS_VERSION,
+            "terms_accepted_at": utc_now(),
             "created_at": utc_now(),
             "updated_at": utc_now(),
         }
