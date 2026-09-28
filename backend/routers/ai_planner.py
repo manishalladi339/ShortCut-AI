@@ -17,6 +17,7 @@ from services.apply_ai_plan import apply_plan
 from services.music_ducking import apply_music_ducking_policy
 from services.planner_evaluation import evaluate_plan
 from services.rate_limit import enforce_rate_limit
+from services.usage_limits import enforce_daily_ai_plan_limit
 
 router = APIRouter(prefix="/projects", tags=["ai-planner"])
 
@@ -68,6 +69,7 @@ async def create_ai_edit_plan(
             },
         )
 
+    await enforce_daily_ai_plan_limit(user=user)
     plan = await build_plan(project=project, user_id=user["id"], state=state, body=body)
     apply_music_ducking_policy(plan, body)
     plan["evaluation"] = evaluate_plan(plan)
