@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends
 from core.deps import get_current_user
 from core.security import utc_now
 from db.mongo import get_db
-from models.user import UpdateProfileBody, UserPublic
+from models.user import DeleteAccountBody, UpdateProfileBody, UserPublic
 from routers.auth import _user_to_public
+from services.account_deletion import delete_user_account
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -32,3 +33,12 @@ async def update_me(body: UpdateProfileBody, user: dict = Depends(get_current_us
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
     return _user_to_public(fresh)
+
+
+@router.delete("/me")
+async def delete_me(
+    body: DeleteAccountBody,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    # The literal schema requires an explicit DELETE confirmation from the client.
+    return await delete_user_account(user["id"])
