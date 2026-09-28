@@ -63,6 +63,28 @@ class Settings:
     AUDIO_TARGET_LRA: float = float(os.environ.get("AUDIO_TARGET_LRA", "11.0"))
     WORKER_POLL_INTERVAL_SEC: float = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0"))
     JOB_LEASE_SECONDS: int = int(os.environ.get("JOB_LEASE_SECONDS", "1200"))
+
+    # Public-release safety limits
+    MAX_UPLOAD_BYTES: int = int(os.environ.get("MAX_UPLOAD_BYTES", str(1024 * 1024 * 1024)))
+    MAX_USER_STORAGE_BYTES: int = int(
+        os.environ.get("MAX_USER_STORAGE_BYTES", str(10 * 1024 * 1024 * 1024))
+    )
+    MAX_VIDEO_DURATION_SEC: int = int(os.environ.get("MAX_VIDEO_DURATION_SEC", "3600"))
+    MAX_AUDIO_DURATION_SEC: int = int(os.environ.get("MAX_AUDIO_DURATION_SEC", "7200"))
+    MAX_ACTIVE_RENDERS_PER_USER: int = int(
+        os.environ.get("MAX_ACTIVE_RENDERS_PER_USER", "2")
+    )
+
+    AUTH_LOGIN_RATE_LIMIT: int = int(os.environ.get("AUTH_LOGIN_RATE_LIMIT", "10"))
+    AUTH_SIGNUP_RATE_LIMIT: int = int(os.environ.get("AUTH_SIGNUP_RATE_LIMIT", "5"))
+    AUTH_RESET_RATE_LIMIT: int = int(os.environ.get("AUTH_RESET_RATE_LIMIT", "5"))
+    AUTH_RATE_WINDOW_SEC: int = int(os.environ.get("AUTH_RATE_WINDOW_SEC", "3600"))
+    AI_PLAN_RATE_LIMIT: int = int(os.environ.get("AI_PLAN_RATE_LIMIT", "20"))
+    ANALYZE_RATE_LIMIT: int = int(os.environ.get("ANALYZE_RATE_LIMIT", "30"))
+    RENDER_RATE_LIMIT: int = int(os.environ.get("RENDER_RATE_LIMIT", "10"))
+    EXPENSIVE_ACTION_RATE_WINDOW_SEC: int = int(
+        os.environ.get("EXPENSIVE_ACTION_RATE_WINDOW_SEC", "3600")
+    )
     MEDIA_INTELLIGENCE_TIMEOUT_SEC: int = int(
         os.environ.get("MEDIA_INTELLIGENCE_TIMEOUT_SEC", "900")
     )
@@ -135,6 +157,12 @@ class Settings:
         os.environ.get("STRIPE_PAID_PLANS_ENABLED", "false").lower() == "true"
     )
 
+    # Observability. Sentry is optional for private beta but expected before public launch.
+    SENTRY_DSN: str = os.environ.get("SENTRY_DSN", "").strip()
+    SENTRY_TRACES_SAMPLE_RATE: float = float(
+        os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.05")
+    )
+
     def validate_runtime(self) -> None:
         if self.ENVIRONMENT not in {"development", "test", "staging", "production"}:
             raise RuntimeError(
@@ -198,6 +226,15 @@ class Settings:
                 raise RuntimeError(
                     "Production PASSWORD_RESET_URL_TEMPLATE must contain {token}"
                 )
+
+            if self.MAX_UPLOAD_BYTES <= 0 or self.MAX_USER_STORAGE_BYTES < self.MAX_UPLOAD_BYTES:
+                raise RuntimeError(
+                    "Production storage limits are invalid: MAX_USER_STORAGE_BYTES must be >= MAX_UPLOAD_BYTES"
+                )
+            if self.MAX_ACTIVE_RENDERS_PER_USER < 1:
+                raise RuntimeError("MAX_ACTIVE_RENDERS_PER_USER must be at least 1")
+            if not (0.0 <= self.SENTRY_TRACES_SAMPLE_RATE <= 1.0):
+                raise RuntimeError("SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1")
 
 
 
