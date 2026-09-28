@@ -1,4 +1,4 @@
-"""Authentication: signup, login, Google (Emergent), refresh, me, password reset."""
+"""Authentication: signup, login, refresh, me, and password reset."""
 from __future__ import annotations
 
 import hashlib
@@ -162,89 +162,6 @@ async def login(body: LoginBody) -> AuthResponse:
     await _audit(user["id"], "auth.login")
     return AuthResponse(
         user=_user_to_public(user),
-        access_token=tokens.access_token,
-        refresh_token=tokens.refresh_token,
-    )
-
-
-@router.post("/google", response_model=AuthResponse)
-async def google_login(body: GoogleAuthBody) -> AuthResponse:
-    """Exchange Emergent-issued session_token for our own JWT.
-
-    We verify the session_token against Emergent's session-data endpoint,
-    upsert the user by email, then issue our own access/refresh JWT pair.
-    """
-    db = get_db()
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(
-                settings.EMERGENT_AUTH_SESSION_URL,
-                headers={"X-Session-ID": body.session_token},
-            )
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"error": {"code": "auth.google_unreachable", "message": str(e)}},
-        )
-    if r.status_code != 200:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": {"code": "auth.google_invalid", "message": "Session verification failed"}},
-        )
-    data = r.json()
-    google_email = (data.get("email") or "").lower().strip()
-    google_id = data.get("id")
-    name = data.get("name") or google_email.split("@")[0]
-    picture = data.get("picture")
-    if not google_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": {"code": "auth.google_missing_email", "message": "Google did not return an email"}},
-        )
-
-    existing = await db.users.find_one({"email": google_email}, {"_id": 0})
-    if existing:
-        update = {
-            "google_id": google_id,
-            "updated_at": utc_now(),
-        }
-        if not existing.get("avatar_url") and picture:
-            update["avatar_url"] = picture
-        # Promote provider to "both" if user already had email auth, else "google".
-        if existing.get("password_hash"):
-            update["auth_provider"] = AuthProvider.both.value
-        else:
-            update["auth_provider"] = AuthProvider.google.value
-        await db.users.update_one({"id": existing["id"]}, {"$set": update})
-        existing.update(update)
-        user_doc = existing
-    else:
-        user_doc = {
-            "id": str(uuid.uuid4()),
-            "email": google_email,
-            "password_hash": None,
-            "auth_provider": AuthProvider.google.value,
-            "google_id": google_id,
-            "name": name,
-            "avatar_url": picture,
-            "role": "user",
-            "subscription_tier": SubscriptionTier.free.value,
-            "subscription_status": "active",
-            "monthly_project_count": 0,
-            "monthly_project_limit": 3,
-            "quota_period": quota_period(),
-            "onboarding_complete": False,
-            "user_type": None,
-            "niche": [],
-            "created_at": utc_now(),
-            "updated_at": utc_now(),
-        }
-        await db.users.insert_one(user_doc)
-
-    tokens = await _new_tokens(user_doc["id"])
-    await _audit(user_doc["id"], "auth.google_login")
-    return AuthResponse(
-        user=_user_to_public(user_doc),
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
     )
