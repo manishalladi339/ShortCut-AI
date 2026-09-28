@@ -15,6 +15,8 @@ def _valid_production(monkeypatch):
     monkeypatch.setattr(settings, "VISION_PROVIDER", "openai")
     monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "openai")
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-production-key")
+    monkeypatch.setattr(settings, "SENTRY_DSN", "https://public@example.ingest.sentry.io/1")
+    monkeypatch.setattr(settings, "TERMS_VERSION", "2026-09-28")
     monkeypatch.setattr(settings, "PASSWORD_RESET_EMAIL_PROVIDER", "resend")
     monkeypatch.setattr(settings, "RESEND_API_KEY", "test-resend-key")
     monkeypatch.setattr(
@@ -101,4 +103,32 @@ def test_production_rejects_invalid_storage_limits(monkeypatch):
     monkeypatch.setattr(settings, "MAX_UPLOAD_BYTES", 1024)
     monkeypatch.setattr(settings, "MAX_USER_STORAGE_BYTES", 512)
     with pytest.raises(RuntimeError, match="storage limits"):
+        settings.validate_runtime()
+
+
+def test_production_rejects_placeholder_openai_key(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "REPLACE_WITH_PROVIDER_KEY")
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        settings.validate_runtime()
+
+
+def test_production_requires_sentry(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(settings, "SENTRY_DSN", "")
+    with pytest.raises(RuntimeError, match="SENTRY_DSN"):
+        settings.validate_runtime()
+
+
+def test_production_rejects_placeholder_sentry(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(settings, "SENTRY_DSN", "REPLACE_WITH_SENTRY_DSN")
+    with pytest.raises(RuntimeError, match="SENTRY_DSN"):
+        settings.validate_runtime()
+
+
+def test_production_rejects_placeholder_resend_key(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "REPLACE_WITH_RESEND_KEY")
+    with pytest.raises(RuntimeError, match="RESEND_API_KEY"):
         settings.validate_runtime()
