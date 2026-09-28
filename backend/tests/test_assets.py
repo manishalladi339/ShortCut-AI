@@ -11,7 +11,9 @@ def test_presign_upload_creates_pending_asset(api_url, session, fresh_user):
         "size_bytes": 1234,
         "tags": ["test"],
     }
-    response = session.post(f"{api_url}/assets/presign-upload", json=payload, headers=headers)
+    response = session.post(
+        f"{api_url}/assets/presign-upload", json=payload, headers=headers
+    )
     assert response.status_code == 201, response.text
     body = response.json()
     for key in ("asset_id", "upload_url", "upload_headers", "storage_key", "expires_at"):
@@ -24,6 +26,36 @@ def test_presign_upload_creates_pending_asset(api_url, session, fresh_user):
     )
     assert asset["upload_status"] == "pending"
     assert asset["processing_status"] == "pending"
+
+
+def test_presign_rejects_public_beta_oversize_upload(api_url, session, fresh_user):
+    response = session.post(
+        f"{api_url}/assets/presign-upload",
+        json={
+            "filename": "too-big.mp4",
+            "mime_type": "video/mp4",
+            "kind": "video",
+            "size_bytes": 1024 * 1024 * 1024 + 1,
+        },
+        headers=fresh_user["auth_headers"],
+    )
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "upload.file_too_large"
+
+
+def test_presign_rejects_mime_kind_mismatch(api_url, session, fresh_user):
+    response = session.post(
+        f"{api_url}/assets/presign-upload",
+        json={
+            "filename": "fake.mp4",
+            "mime_type": "image/png",
+            "kind": "video",
+            "size_bytes": 100,
+        },
+        headers=fresh_user["auth_headers"],
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "upload.mime_kind_mismatch"
 
 
 def test_full_upload_confirmation_enqueues_processing_job(
@@ -76,7 +108,6 @@ def test_full_upload_confirmation_enqueues_processing_job(
     assert job_response.json()["type"] == "media_probe"
     assert job_response.json()["status"] == "queued"
 
-    # Reconfirm is idempotent and returns the same processing job.
     second = session.post(
         f"{api_url}/assets/{asset_id}/confirm", json={}, headers=headers
     )
