@@ -5,12 +5,14 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from core.config import settings
 from core.deps import get_current_user
 from core.security import utc_now
 from db.mongo import get_db
 from models.job import JobType
 from models.media_intelligence import AnalyzeAssetOut, MediaIntelligenceOut
 from services import job_service
+from services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/assets", tags=["media-intelligence"])
 
@@ -46,6 +48,12 @@ async def analyze_asset(
     asset_id: str,
     user: dict = Depends(get_current_user),
 ) -> AnalyzeAssetOut:
+    await enforce_rate_limit(
+        scope="ai.analyze",
+        key=user["id"],
+        limit=settings.ANALYZE_RATE_LIMIT,
+        window_seconds=settings.EXPENSIVE_ACTION_RATE_WINDOW_SEC,
+    )
     db = get_db()
     asset = await _owned_ready_asset(asset_id, user["id"])
 
