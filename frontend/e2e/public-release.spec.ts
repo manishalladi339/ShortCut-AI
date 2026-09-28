@@ -20,5 +20,5 @@ test("email user can sign up and create a project", async ({ page }) => {
   await page.getByTestId("new-project-submit-button").click();
 
   await expect(page.getByTestId("project-upload-asset-button")).toBeVisible();
-  await expect(page.getByText("Public Release Smoke")).toBeVisible();
+  await expect(page.getByTestId("project-detail-header-title")).toHaveText("Public Release Smoke");
 });
