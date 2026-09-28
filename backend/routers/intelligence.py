@@ -48,6 +48,11 @@ async def analyze_asset(
     asset_id: str,
     user: dict = Depends(get_current_user),
 ) -> AnalyzeAssetOut:
+    if not settings.AI_FEATURES_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": {"code": "ai.disabled", "message": "Media intelligence is temporarily unavailable"}},
+        )
     await enforce_rate_limit(
         scope="ai.analyze",
         key=user["id"],
