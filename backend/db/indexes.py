@@ -25,6 +25,9 @@ async def ensure_indexes() -> None:
     await db.sessions.create_index("refresh_token_hash", unique=True)
     await db.sessions.create_index("expires_at", expireAfterSeconds=0)
 
+    await db.password_resets.create_index("expires_at", expireAfterSeconds=0)
+    await db.password_resets.create_index("user_id")
+
     await db.rate_limits.create_index("expires_at", expireAfterSeconds=0)
 
     await db.projects.create_index("user_id")
