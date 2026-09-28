@@ -36,7 +36,8 @@ def test_creator_memory_is_private(api_url, session, fresh_user):
             "email": f"memory_{uuid.uuid4().hex[:8]}@shortcut.ai",
             "password": "Demo12345!",
             "name": "Memory User",
-        },
+        "accept_terms": True,
+            },
     )
     assert signup.status_code in {200, 201}, signup.text
     second_headers = {

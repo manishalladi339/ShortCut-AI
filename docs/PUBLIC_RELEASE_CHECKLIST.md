@@ -2,6 +2,25 @@
 
 ShortCut AI is eligible for a public beta only when every **Required** item below is complete on the release commit.
 
+## Repository-complete protections
+
+- [x] First-party Google OIDC path exists and is disabled unless ShortCut-owned client IDs are configured.
+- [x] Email signup records explicit versioned Terms/Privacy acceptance.
+- [x] First-time Google account creation records the current Terms version.
+- [x] Auth/upload/AI/render abuse limits are enforced server-side.
+- [x] Upload size, per-user storage, media-duration and concurrent-render limits are enforced.
+- [x] Operator kill-switches exist for signups, AI features and renders.
+- [x] Account deletion removes user-scoped database data and private object-storage media.
+- [x] Caddy HTTPS edge is included in production Compose.
+- [x] Private S3 browser-upload CORS template is included.
+- [x] Sentry is integrated and required by production runtime validation.
+- [x] Production rejects placeholder AI/email/monitoring credentials.
+- [x] Session, reset-token and rate-limit TTL cleanup is configured.
+- [x] In-app Privacy Policy and Terms pages exist.
+- [x] Web E2E tests, CodeQL, dependency audits and secret scanning are configured.
+- [x] EAS mobile development/preview/production build profiles exist.
+- [x] A real deployed-video production smoke script exists.
+
 ## Automated gates — Required
 
 - [ ] backend-ci is green.
@@ -54,7 +73,8 @@ Record render time, failure reason, OpenAI cost and peak CPU/RAM for every run.
 - [x] Account deletion removes user-scoped database records and object-storage media.
 - [ ] Published Privacy Policy URL uses the final operator/legal identity and contact details.
 - [ ] Published Terms URL uses the final operator/legal identity and governing-law decision.
-- [ ] Support/contact path is visible in the product.
+- [x] Support/contact path is visible in the product.
+- [x] New account creation records current Terms/Privacy acceptance.
 - [ ] Data retention and deletion policy matches actual infrastructure lifecycle rules.
 
 ## Launch sequence
@@ -67,3 +87,12 @@ Record render time, failure reason, OpenAI cost and peak CPU/RAM for every run.
 6. Resolve launch-blocking defects.
 7. Expand to a capped public beta.
 8. Add paid plans only after metering, billing webhooks, refunds/support and cost margins are verified.
+
+## Native/mobile distribution — Required for store release
+
+- [x] EAS production build profile exists.
+- [x] iOS/Android application identifiers are configured in the Expo project.
+- [ ] Confirm the configured identifier is available in Apple/Google developer accounts.
+- [ ] Configure signing credentials.
+- [ ] Complete App Store / Play Console privacy, content-rating and legal forms.
+- [ ] Submit store builds and resolve review feedback.

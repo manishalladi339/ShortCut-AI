@@ -18,7 +18,7 @@ from services.export_recovery import export_updates_from_job
 from services.render_plan import compile_render_plan
 from services.rate_limit import enforce_rate_limit
 from services.storage import get_storage
-from services.usage_limits import enforce_render_concurrency
+from services.usage_limits import enforce_daily_render_limit, enforce_render_concurrency
 
 router = APIRouter(prefix="/projects", tags=["render"])
 
@@ -130,6 +130,7 @@ async def create_export(
         existing = await _reconcile_export_from_job(existing)
         return _export_out(existing)
 
+    await enforce_daily_render_limit(user=user)
     now = utc_now()
     export_id = str(uuid.uuid4())
     job = await job_service.enqueue(

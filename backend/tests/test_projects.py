@@ -77,7 +77,7 @@ def test_cross_user_isolation_returns_404(api_url, session, fresh_user):
 
     # User B signs up
     email_b = f"userb_{uuid.uuid4().hex[:8]}@shortcut.ai"
-    rb = session.post(f"{api_url}/auth/signup", json={"email": email_b, "password": "Demo12345!", "name": "B"})
+    rb = session.post(f"{api_url}/auth/signup", json={"email": email_b, "password": "Demo12345!", "name": "B", "accept_terms": True})
     assert rb.status_code == 201
     hb = {"Authorization": f"Bearer {rb.json()['access_token']}"}
 

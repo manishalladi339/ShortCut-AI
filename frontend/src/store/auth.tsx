@@ -14,8 +14,8 @@ type AuthState = {
 
 type AuthContextValue = AuthState & {
   signin: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name: string) => Promise<void>;
-  google: (id_token: string) => Promise<void>;
+  signup: (email: string, password: string, name: string, accept_terms: boolean) => Promise<void>;
+  google: (id_token: string, accept_terms: boolean) => Promise<void>;
   deleteAccount: () => Promise<void>;
   signout: () => Promise<void>;
   refreshMe: () => Promise<void>;
@@ -56,16 +56,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signup: AuthContextValue["signup"] = useCallback(
-    async (email, password, name) => {
-      const r = await authApi.signup(email, password, name);
+    async (email, password, name, accept_terms) => {
+      const r = await authApi.signup(email, password, name, accept_terms);
       await finishAuth(r);
     },
     [finishAuth],
   );
 
   const google: AuthContextValue["google"] = useCallback(
-    async (id_token) => {
-      const r = await authApi.google(id_token);
+    async (id_token, accept_terms) => {
+      const r = await authApi.google(id_token, accept_terms);
       await finishAuth(r);
     },
     [finishAuth],

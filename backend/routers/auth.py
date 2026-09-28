@@ -94,6 +94,16 @@ async def _new_tokens(user_id: str) -> TokenPair:
 
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def signup(request: Request, body: SignupBody) -> AuthResponse:
+    if not body.accept_terms:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "auth.terms_required",
+                    "message": "You must accept the Terms of Service and Privacy Policy to create an account.",
+                }
+            },
+        )
     if not settings.SIGNUPS_ENABLED:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -129,6 +139,8 @@ async def signup(request: Request, body: SignupBody) -> AuthResponse:
         "onboarding_complete": False,
         "user_type": None,
         "niche": [],
+        "terms_version": settings.TERMS_VERSION,
+        "terms_accepted_at": utc_now(),
         "created_at": utc_now(),
         "updated_at": utc_now(),
     }
@@ -229,6 +241,16 @@ async def google_login(request: Request, body: GoogleAuthBody) -> AuthResponse:
 
     db = get_db()
     existing = await db.users.find_one({"email": google_email}, {"_id": 0})
+    if not existing and not body.accept_terms:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "auth.terms_required",
+                    "message": "You must accept the Terms of Service and Privacy Policy to create an account.",
+                }
+            },
+        )
     if existing:
         update = {"google_id": google_id, "updated_at": utc_now()}
         if not existing.get("avatar_url") and picture:
@@ -259,6 +281,8 @@ async def google_login(request: Request, body: GoogleAuthBody) -> AuthResponse:
             "onboarding_complete": False,
             "user_type": None,
             "niche": [],
+            "terms_version": settings.TERMS_VERSION,
+            "terms_accepted_at": utc_now(),
             "created_at": utc_now(),
             "updated_at": utc_now(),
         }

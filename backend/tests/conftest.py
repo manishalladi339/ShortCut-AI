@@ -47,7 +47,10 @@ def session():
 
 def _signup(s, email=None, password="Demo12345!", name="Test User"):
     email = email or f"test_{uuid.uuid4().hex[:10]}@shortcut.ai"
-    r = s.post(f"{API}/auth/signup", json={"email": email, "password": password, "name": name})
+    r = s.post(
+        f"{API}/auth/signup",
+        json={"email": email, "password": password, "name": name, "accept_terms": True},
+    )
     return r, email, password
 
 

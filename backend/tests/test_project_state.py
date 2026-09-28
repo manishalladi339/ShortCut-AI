@@ -73,7 +73,8 @@ def test_state_is_private_to_project_owner(api_url, session, fresh_user):
             "email": f"state_{uuid.uuid4().hex[:8]}@shortcut.ai",
             "password": "Demo12345!",
             "name": "Other",
-        },
+        "accept_terms": True,
+            },
     )
     other_headers = {"Authorization": f"Bearer {signup.json()['access_token']}"}
     response = session.get(f"{api_url}/projects/{project['id']}/state", headers=other_headers)

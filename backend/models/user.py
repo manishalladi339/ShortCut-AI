@@ -25,6 +25,7 @@ class SignupBody(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     name: str = Field(min_length=1, max_length=80)
+    accept_terms: bool = False
 
 
 class LoginBody(BaseModel):
@@ -34,6 +35,7 @@ class LoginBody(BaseModel):
 
 class GoogleAuthBody(BaseModel):
     id_token: str = Field(min_length=20)
+    accept_terms: bool = False
 
 
 class RefreshBody(BaseModel):

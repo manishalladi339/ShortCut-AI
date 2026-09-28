@@ -13,6 +13,7 @@ from models.job import JobType
 from models.media_intelligence import AnalyzeAssetOut, MediaIntelligenceOut
 from services import job_service
 from services.rate_limit import enforce_rate_limit
+from services.usage_limits import enforce_daily_intelligence_limit
 
 router = APIRouter(prefix="/assets", tags=["media-intelligence"])
 
@@ -73,6 +74,7 @@ async def analyze_asset(
             status=existing["status"],
         )
 
+    await enforce_daily_intelligence_limit(user=user)
     now = utc_now()
     intelligence_id = str(uuid.uuid4())
     job = await job_service.enqueue(

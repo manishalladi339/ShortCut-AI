@@ -74,6 +74,15 @@ class Settings:
     MAX_ACTIVE_RENDERS_PER_USER: int = int(
         os.environ.get("MAX_ACTIVE_RENDERS_PER_USER", "2")
     )
+    MAX_DAILY_INTELLIGENCE_JOBS_FREE: int = int(
+        os.environ.get("MAX_DAILY_INTELLIGENCE_JOBS_FREE", "20")
+    )
+    MAX_DAILY_RENDER_JOBS_FREE: int = int(
+        os.environ.get("MAX_DAILY_RENDER_JOBS_FREE", "10")
+    )
+    MAX_DAILY_AI_PLANS_FREE: int = int(
+        os.environ.get("MAX_DAILY_AI_PLANS_FREE", "30")
+    )
 
     AUTH_LOGIN_RATE_LIMIT: int = int(os.environ.get("AUTH_LOGIN_RATE_LIMIT", "10" if ENVIRONMENT == "production" else "10000"))
     AUTH_SIGNUP_RATE_LIMIT: int = int(os.environ.get("AUTH_SIGNUP_RATE_LIMIT", "5" if ENVIRONMENT == "production" else "10000"))
@@ -171,6 +180,7 @@ class Settings:
     SENTRY_TRACES_SAMPLE_RATE: float = float(
         os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.05")
     )
+    TERMS_VERSION: str = os.environ.get("TERMS_VERSION", "2026-09-28").strip()
 
     def validate_runtime(self) -> None:
         if self.ENVIRONMENT not in {"development", "test", "staging", "production"}:
@@ -216,7 +226,10 @@ class Settings:
                     self.EMBEDDING_PROVIDER,
                 )
             )
-            if uses_openai and not self.OPENAI_API_KEY:
+            if uses_openai and (
+                not self.OPENAI_API_KEY
+                or self.OPENAI_API_KEY.upper().startswith("REPLACE_WITH")
+            ):
                 raise RuntimeError(
                     "OPENAI_API_KEY is required for configured production AI providers"
                 )
@@ -225,7 +238,10 @@ class Settings:
                 raise RuntimeError(
                     "Production PASSWORD_RESET_EMAIL_PROVIDER must be 'resend'"
                 )
-            if not self.RESEND_API_KEY:
+            if (
+                not self.RESEND_API_KEY
+                or self.RESEND_API_KEY.upper().startswith("REPLACE_WITH")
+            ):
                 raise RuntimeError("Production RESEND_API_KEY is required")
             if not self.PASSWORD_RESET_FROM_EMAIL:
                 raise RuntimeError(
@@ -247,8 +263,21 @@ class Settings:
                 )
             if self.MAX_ACTIVE_RENDERS_PER_USER < 1:
                 raise RuntimeError("MAX_ACTIVE_RENDERS_PER_USER must be at least 1")
+            if min(
+                self.MAX_DAILY_INTELLIGENCE_JOBS_FREE,
+                self.MAX_DAILY_RENDER_JOBS_FREE,
+                self.MAX_DAILY_AI_PLANS_FREE,
+            ) < 1:
+                raise RuntimeError("Daily free-beta limits must be at least 1")
+            if not (
+                self.SENTRY_DSN
+                and not self.SENTRY_DSN.upper().startswith("REPLACE_WITH")
+            ):
+                raise RuntimeError("Production SENTRY_DSN is required for public-release monitoring")
             if not (0.0 <= self.SENTRY_TRACES_SAMPLE_RATE <= 1.0):
                 raise RuntimeError("SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1")
+            if not self.TERMS_VERSION:
+                raise RuntimeError("TERMS_VERSION is required in production")
 
 
 
