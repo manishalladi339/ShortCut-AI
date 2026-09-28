@@ -94,6 +94,11 @@ async def _new_tokens(user_id: str) -> TokenPair:
 
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def signup(request: Request, body: SignupBody) -> AuthResponse:
+    if not settings.SIGNUPS_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": {"code": "signup.disabled", "message": "New signups are temporarily unavailable"}},
+        )
     await enforce_rate_limit(
         scope="auth.signup",
         key=client_key(request),
