@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "shortcutai",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.shortcutai.app",
@@ -18,7 +17,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.shortcutai.app",
       "versionCode": 1
     },
