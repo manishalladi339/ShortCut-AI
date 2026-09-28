@@ -158,6 +158,14 @@ class Settings:
         os.environ.get("STRIPE_PAID_PLANS_ENABLED", "false").lower() == "true"
     )
 
+    # Incident controls: operators can disable cost-generating/public entry paths
+    # without rebuilding the application.
+    SIGNUPS_ENABLED: bool = os.environ.get("SIGNUPS_ENABLED", "true").lower() == "true"
+    AI_FEATURES_ENABLED: bool = (
+        os.environ.get("AI_FEATURES_ENABLED", "true").lower() == "true"
+    )
+    RENDERS_ENABLED: bool = os.environ.get("RENDERS_ENABLED", "true").lower() == "true"
+
     # Observability. Sentry is optional for private beta but expected before public launch.
     SENTRY_DSN: str = os.environ.get("SENTRY_DSN", "").strip()
     SENTRY_TRACES_SAMPLE_RATE: float = float(
