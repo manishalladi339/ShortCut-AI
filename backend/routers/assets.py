@@ -1,4 +1,5 @@
 """Asset upload, processing and library routes."""
+import asyncio
 import os
 import uuid
 from datetime import datetime
@@ -7,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, Response
 
+from core.config import settings
 from core.deps import get_current_user
 from core.security import utc_now
 from db.mongo import get_db
@@ -25,6 +27,12 @@ from services.storage import LocalStorage, get_storage
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
+_KIND_MIME_PREFIX = {
+    "video": "video/",
+    "audio": "audio/",
+    "image": "image/",
+}
+
 
 def _to_out(doc: dict, refresh_download_url: bool = True) -> AssetOut:
     if refresh_download_url and doc.get("upload_status") == UploadStatus.uploaded.value:
@@ -32,11 +40,66 @@ def _to_out(doc: dict, refresh_download_url: bool = True) -> AssetOut:
     return AssetOut(**{k: v for k, v in doc.items() if k != "_id"})
 
 
+async def _storage_usage_bytes(user_id: str, exclude_asset_id: str | None = None) -> int:
+    match: dict = {
+        "user_id": user_id,
+        "upload_status": {"$ne": UploadStatus.failed.value},
+    }
+    if exclude_asset_id:
+        match["id"] = {"$ne": exclude_asset_id}
+    rows = await get_db().assets.aggregate(
+        [
+            {"$match": match},
+            {"$group": {"_id": None, "total": {"$sum": "$size_bytes"}}},
+        ]
+    ).to_list(1)
+    return int(rows[0]["total"]) if rows else 0
+
+
+def _quota_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        detail={
+            "error": {
+                "code": "storage.quota_exceeded",
+                "message": "This upload would exceed the free-beta storage allowance.",
+            }
+        },
+    )
+
+
 @router.post("/presign-upload", response_model=PresignUploadOut, status_code=status.HTTP_201_CREATED)
 async def presign_upload(
     body: PresignUploadBody, user: dict = Depends(get_current_user)
 ) -> PresignUploadOut:
     db = get_db()
+
+    if body.size_bytes > settings.MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={
+                "error": {
+                    "code": "upload.file_too_large",
+                    "message": "File exceeds the maximum upload size for the public beta.",
+                }
+            },
+        )
+
+    expected_prefix = _KIND_MIME_PREFIX[body.kind.value]
+    if not body.mime_type.lower().startswith(expected_prefix):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": {
+                    "code": "upload.mime_kind_mismatch",
+                    "message": "File type does not match the selected asset kind.",
+                }
+            },
+        )
+
+    if await _storage_usage_bytes(user["id"]) + body.size_bytes > settings.MAX_USER_STORAGE_BYTES:
+        raise _quota_error()
+
     if body.project_id:
         project = await db.projects.find_one(
             {"id": body.project_id, "user_id": user["id"]}, {"_id": 0, "id": 1}
@@ -66,6 +129,7 @@ async def presign_upload(
         "width": None,
         "height": None,
         "media_metadata": {},
+        "derivatives": {},
         "storage_type": "s3" if storage.__class__.__name__ == "S3Storage" else "local",
         "storage_bucket": storage.bucket,
         "storage_key": storage_key,
@@ -104,20 +168,49 @@ async def confirm_upload(
         )
 
     storage = get_storage()
-    if not storage.exists(doc["storage_key"]):
+    exists = await asyncio.to_thread(storage.exists, doc["storage_key"])
+    if not exists:
         raise HTTPException(
             status_code=400,
             detail={"error": {"code": "asset.binary_missing", "message": "Upload not received yet"}},
         )
 
-    actual_size = storage.size(doc["storage_key"])
+    actual_size = await asyncio.to_thread(storage.size, doc["storage_key"])
     if actual_size <= 0:
         raise HTTPException(
             status_code=400,
             detail={"error": {"code": "asset.empty", "message": "Uploaded file is empty"}},
         )
 
-    # Confirmation is idempotent: do not enqueue duplicate processing jobs.
+    other_usage = await _storage_usage_bytes(user["id"], exclude_asset_id=asset_id)
+    if (
+        actual_size > settings.MAX_UPLOAD_BYTES
+        or other_usage + actual_size > settings.MAX_USER_STORAGE_BYTES
+    ):
+        await asyncio.to_thread(storage.delete, doc["storage_key"])
+        await db.assets.update_one(
+            {"id": asset_id, "user_id": user["id"]},
+            {
+                "$set": {
+                    "upload_status": UploadStatus.failed.value,
+                    "processing_status": "failed",
+                    "size_bytes": actual_size,
+                    "updated_at": utc_now(),
+                }
+            },
+        )
+        if actual_size > settings.MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={
+                    "error": {
+                        "code": "upload.file_too_large",
+                        "message": "Uploaded file exceeds the maximum public-beta size.",
+                    }
+                },
+            )
+        raise _quota_error()
+
     if doc.get("upload_status") == UploadStatus.uploaded.value and doc.get("processing_job_id"):
         fresh = await db.assets.find_one({"id": asset_id}, {"_id": 0})
         return _to_out(fresh)
@@ -217,8 +310,16 @@ async def delete_asset(asset_id: str, user: dict = Depends(get_current_user)) ->
             detail={"error": {"code": "resource.not_found", "message": "Asset not found"}},
         )
 
-    get_storage().delete(doc["storage_key"])
+    storage = get_storage()
+    keys = {doc["storage_key"]}
+    for derivative in (doc.get("derivatives") or {}).values():
+        if isinstance(derivative, dict) and derivative.get("storage_key"):
+            keys.add(derivative["storage_key"])
+    for key in keys:
+        await asyncio.to_thread(storage.delete, key)
+
     await db.jobs.delete_many({"asset_id": asset_id, "user_id": user["id"]})
+    await db.media_intelligence.delete_many({"asset_id": asset_id, "user_id": user["id"]})
     await db.assets.delete_one({"id": asset_id, "user_id": user["id"]})
     return {"ok": True}
 
@@ -240,6 +341,11 @@ async def local_put(storage_key: str, request: Request) -> dict:
         raise HTTPException(
             status_code=400,
             detail={"error": {"code": "upload.empty", "message": "Empty body"}},
+        )
+    if len(body) > settings.MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={"error": {"code": "upload.file_too_large", "message": "Upload is too large"}},
         )
     written = _local_storage().write_local(storage_key, body)
     return {"ok": True, "bytes": written}
