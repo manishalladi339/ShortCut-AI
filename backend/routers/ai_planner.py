@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from core.config import settings
 from core.deps import get_current_user
 from db.mongo import get_db
 from models.ai_plan import AIEditPlanOut, ApplyAIEditPlanRequest, CreateAIEditPlanRequest
@@ -15,6 +16,7 @@ from services.creator_memory import refresh_creator_memory
 from services.apply_ai_plan import apply_plan
 from services.music_ducking import apply_music_ducking_policy
 from services.planner_evaluation import evaluate_plan
+from services.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/projects", tags=["ai-planner"])
 
@@ -29,6 +31,12 @@ async def create_ai_edit_plan(
     body: CreateAIEditPlanRequest,
     user: dict = Depends(get_current_user),
 ) -> AIEditPlanOut:
+    await enforce_rate_limit(
+        scope="ai.plan",
+        key=user["id"],
+        limit=settings.AI_PLAN_RATE_LIMIT,
+        window_seconds=settings.EXPENSIVE_ACTION_RATE_WINDOW_SEC,
+    )
     db = get_db()
     project = await db.projects.find_one(
         {"id": project_id, "user_id": user["id"], "archived": False},
