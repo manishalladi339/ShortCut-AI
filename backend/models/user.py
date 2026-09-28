@@ -33,7 +33,7 @@ class LoginBody(BaseModel):
 
 
 class GoogleAuthBody(BaseModel):
-    session_token: str = Field(min_length=10)
+    id_token: str = Field(min_length=20)
 
 
 class RefreshBody(BaseModel):
