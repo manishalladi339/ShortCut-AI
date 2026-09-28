@@ -21,7 +21,12 @@ export function LegalPage({
         <Pressable onPress={() => router.back()} style={styles.back}>
           <Text style={[typography.body, { color: colors.textMedium }]}>← Back</Text>
         </Pressable>
-        <Text style={[typography.h3, { color: colors.textHigh, flex: 1 }]}>{title}</Text>
+        <Text
+          testID="legal-page-title"
+          style={[typography.h3, { color: colors.textHigh, flex: 1 }]}
+        >
+          {title}
+        </Text>
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={[typography.caption, { color: colors.textMedium }]}>
