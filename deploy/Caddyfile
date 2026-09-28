@@ -1,0 +1,10 @@
+{$SHORTCUT_API_DOMAIN} {
+  encode zstd gzip
+
+  log {
+    output stdout
+    format json
+  }
+
+  reverse_proxy api:8001
+}
