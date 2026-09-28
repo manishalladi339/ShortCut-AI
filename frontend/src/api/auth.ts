@@ -38,6 +38,7 @@ export const authApi = {
     }),
   logout: (refresh_token: string) =>
     api<{ ok: true }>("/auth/logout", { method: "POST", body: { refresh_token } }),
+  deleteMe: () => api<{ ok: true }>("/users/me", { method: "DELETE" }),
   updateMe: (body: Partial<Pick<UserPublic, "name" | "user_type" | "niche" | "onboarding_complete" | "avatar_url">>) =>
     api<UserPublic>("/users/me", { method: "PATCH", body }),
 };
