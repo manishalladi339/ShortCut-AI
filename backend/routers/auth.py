@@ -1,4 +1,4 @@
-"""Authentication: signup, login, Google (Emergent), refresh, me, password reset."""
+"""Authentication: signup, login, Google OIDC, refresh, me, password reset."""
 from __future__ import annotations
 
 import hashlib
@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from core.config import settings
 from core.deps import get_current_user
@@ -23,6 +23,7 @@ from core.security import (
 from db.mongo import get_db
 from models.common import AuthProvider, SubscriptionTier
 from services.email_delivery import EmailDeliveryError, send_password_reset
+from services.rate_limit import client_key, enforce_rate_limit
 from services.quota import quota_period
 from models.user import (
     AuthResponse,
@@ -92,7 +93,13 @@ async def _new_tokens(user_id: str) -> TokenPair:
 
 
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def signup(body: SignupBody) -> AuthResponse:
+async def signup(request: Request, body: SignupBody) -> AuthResponse:
+    await enforce_rate_limit(
+        scope="auth.signup",
+        key=client_key(request),
+        limit=settings.AUTH_SIGNUP_RATE_LIMIT,
+        window_seconds=settings.AUTH_RATE_WINDOW_SEC,
+    )
     db = get_db()
     email = body.email.lower().strip()
     if await db.users.find_one({"email": email}, {"_id": 0, "id": 1}):
@@ -131,7 +138,13 @@ async def signup(body: SignupBody) -> AuthResponse:
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(body: LoginBody) -> AuthResponse:
+async def login(request: Request, body: LoginBody) -> AuthResponse:
+    await enforce_rate_limit(
+        scope="auth.login",
+        key=client_key(request),
+        limit=settings.AUTH_LOGIN_RATE_LIMIT,
+        window_seconds=settings.AUTH_RATE_WINDOW_SEC,
+    )
     db = get_db()
     email = body.email.lower().strip()
     user = await db.users.find_one({"email": email}, {"_id": 0})
@@ -156,53 +169,70 @@ async def login(body: LoginBody) -> AuthResponse:
 
 
 @router.post("/google", response_model=AuthResponse)
-async def google_login(body: GoogleAuthBody) -> AuthResponse:
-    """Exchange Emergent-issued session_token for our own JWT.
+async def google_login(request: Request, body: GoogleAuthBody) -> AuthResponse:
+    """Verify a Google-issued OIDC ID token and issue ShortCut JWTs."""
+    await enforce_rate_limit(
+        scope="auth.google",
+        key=client_key(request),
+        limit=settings.AUTH_LOGIN_RATE_LIMIT,
+        window_seconds=settings.AUTH_RATE_WINDOW_SEC,
+    )
+    if not settings.GOOGLE_AUTH_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": {"code": "auth.google_disabled", "message": "Google sign-in is not enabled"}},
+        )
 
-    We verify the session_token against Emergent's session-data endpoint,
-    upsert the user by email, then issue our own access/refresh JWT pair.
-    """
-    db = get_db()
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.get(
-                settings.EMERGENT_AUTH_SESSION_URL,
-                headers={"X-Session-ID": body.session_token},
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": body.id_token},
             )
-    except httpx.HTTPError as e:
+    except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"error": {"code": "auth.google_unreachable", "message": str(e)}},
-        )
+            detail={"error": {"code": "auth.google_unreachable", "message": "Google verification is unavailable"}},
+        ) from exc
+
     if r.status_code != 200:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": {"code": "auth.google_invalid", "message": "Session verification failed"}},
-        )
-    data = r.json()
-    google_email = (data.get("email") or "").lower().strip()
-    google_id = data.get("id")
-    name = data.get("name") or google_email.split("@")[0]
-    picture = data.get("picture")
-    if not google_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": {"code": "auth.google_missing_email", "message": "Google did not return an email"}},
+            detail={"error": {"code": "auth.google_invalid", "message": "Google token verification failed"}},
         )
 
+    data = r.json()
+    audience = str(data.get("aud") or "")
+    issuer = str(data.get("iss") or "")
+    verified = str(data.get("email_verified") or "").lower() == "true"
+    google_email = str(data.get("email") or "").lower().strip()
+    google_id = str(data.get("sub") or "").strip()
+    name = str(data.get("name") or google_email.split("@")[0]).strip()
+    picture = data.get("picture")
+
+    if (
+        audience not in settings.GOOGLE_CLIENT_IDS
+        or issuer not in {"accounts.google.com", "https://accounts.google.com"}
+        or not verified
+        or not google_email
+        or not google_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": {"code": "auth.google_invalid", "message": "Google identity claims are invalid"}},
+        )
+
+    db = get_db()
     existing = await db.users.find_one({"email": google_email}, {"_id": 0})
     if existing:
-        update = {
-            "google_id": google_id,
-            "updated_at": utc_now(),
-        }
+        update = {"google_id": google_id, "updated_at": utc_now()}
         if not existing.get("avatar_url") and picture:
             update["avatar_url"] = picture
-        # Promote provider to "both" if user already had email auth, else "google".
-        if existing.get("password_hash"):
-            update["auth_provider"] = AuthProvider.both.value
-        else:
-            update["auth_provider"] = AuthProvider.google.value
+        update["auth_provider"] = (
+            AuthProvider.both.value
+            if existing.get("password_hash")
+            else AuthProvider.google.value
+        )
         await db.users.update_one({"id": existing["id"]}, {"$set": update})
         existing.update(update)
         user_doc = existing
@@ -213,7 +243,7 @@ async def google_login(body: GoogleAuthBody) -> AuthResponse:
             "password_hash": None,
             "auth_provider": AuthProvider.google.value,
             "google_id": google_id,
-            "name": name,
+            "name": name or google_email.split("@")[0],
             "avatar_url": picture,
             "role": "user",
             "subscription_tier": SubscriptionTier.free.value,
@@ -277,8 +307,14 @@ async def logout(body: RefreshBody, _user: dict = Depends(get_current_user)) -> 
 
 
 @router.post("/forgot-password")
-async def forgot_password(body: ForgotPasswordBody) -> dict:
+async def forgot_password(request: Request, body: ForgotPasswordBody) -> dict:
     """Always returns 200 to avoid email enumeration. Stores a reset token if user exists."""
+    await enforce_rate_limit(
+        scope="auth.forgot_password",
+        key=client_key(request),
+        limit=settings.AUTH_RESET_RATE_LIMIT,
+        window_seconds=settings.AUTH_RATE_WINDOW_SEC,
+    )
     db = get_db()
     email = body.email.lower().strip()
     user = await db.users.find_one({"email": email}, {"_id": 0, "id": 1})
@@ -324,7 +360,13 @@ async def forgot_password(body: ForgotPasswordBody) -> dict:
 
 
 @router.post("/reset-password")
-async def reset_password(body: ResetPasswordBody) -> dict:
+async def reset_password(request: Request, body: ResetPasswordBody) -> dict:
+    await enforce_rate_limit(
+        scope="auth.reset_password",
+        key=client_key(request),
+        limit=settings.AUTH_RESET_RATE_LIMIT,
+        window_seconds=settings.AUTH_RATE_WINDOW_SEC,
+    )
     db = get_db()
     token_hash = hashlib.sha256(body.token.encode()).hexdigest()
     rec = await db.password_resets.find_one(
