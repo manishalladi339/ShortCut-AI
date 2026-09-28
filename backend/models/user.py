@@ -26,7 +26,6 @@ class SignupBody(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     name: str = Field(min_length=1, max_length=80)
     accept_terms: bool = False
-    accept_terms: bool = False
 
 
 class LoginBody(BaseModel):
