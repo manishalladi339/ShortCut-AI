@@ -1,6 +1,6 @@
 """User Pydantic schemas."""
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -33,7 +33,7 @@ class LoginBody(BaseModel):
 
 
 class GoogleAuthBody(BaseModel):
-    session_token: str = Field(min_length=10)
+    id_token: str = Field(min_length=20)
 
 
 class RefreshBody(BaseModel):
@@ -52,6 +52,10 @@ class ResetPasswordBody(BaseModel):
 class ChangePasswordBody(BaseModel):
     old_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class DeleteAccountBody(BaseModel):
+    confirmation: Literal["DELETE"]
 
 
 class UpdateProfileBody(BaseModel):

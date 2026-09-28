@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 
+import sentry_sdk
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
@@ -37,6 +38,14 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
 )
 logger = logging.getLogger("shortcut")
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.ENVIRONMENT,
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        send_default_pii=False,
+    )
 
 app = FastAPI(title="ShortCut AI", version="1.0.0")
 
@@ -70,6 +79,11 @@ async def request_context(request: Request, call_next):
 
     elapsed_ms = (time.perf_counter() - started) * 1000
     response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Frame-Options"] = "DENY"
+    if settings.ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     logger.info(
         "request request_id=%s method=%s path=%s status=%s elapsed_ms=%.2f",
         request_id,
@@ -89,7 +103,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     else:
         body = {"error": {"code": "http_error", "message": str(detail)}}
     body.setdefault("request_id", getattr(request.state, "request_id", None))
-    return JSONResponse(status_code=exc.status_code, content=body)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=body,
+        headers=exc.headers,
+    )
 
 
 api = APIRouter(prefix="/api")

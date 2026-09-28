@@ -63,6 +63,29 @@ class Settings:
     AUDIO_TARGET_LRA: float = float(os.environ.get("AUDIO_TARGET_LRA", "11.0"))
     WORKER_POLL_INTERVAL_SEC: float = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0"))
     JOB_LEASE_SECONDS: int = int(os.environ.get("JOB_LEASE_SECONDS", "1200"))
+
+    # Public-release safety limits
+    MAX_UPLOAD_BYTES: int = int(os.environ.get("MAX_UPLOAD_BYTES", str(1024 * 1024 * 1024)))
+    MAX_USER_STORAGE_BYTES: int = int(
+        os.environ.get("MAX_USER_STORAGE_BYTES", str(10 * 1024 * 1024 * 1024))
+    )
+    MAX_VIDEO_DURATION_SEC: int = int(os.environ.get("MAX_VIDEO_DURATION_SEC", "3600"))
+    MAX_AUDIO_DURATION_SEC: int = int(os.environ.get("MAX_AUDIO_DURATION_SEC", "7200"))
+    MAX_ACTIVE_RENDERS_PER_USER: int = int(
+        os.environ.get("MAX_ACTIVE_RENDERS_PER_USER", "2")
+    )
+
+    AUTH_LOGIN_RATE_LIMIT: int = int(os.environ.get("AUTH_LOGIN_RATE_LIMIT", "10" if ENVIRONMENT == "production" else "10000"))
+    AUTH_SIGNUP_RATE_LIMIT: int = int(os.environ.get("AUTH_SIGNUP_RATE_LIMIT", "5" if ENVIRONMENT == "production" else "10000"))
+    AUTH_RESET_RATE_LIMIT: int = int(os.environ.get("AUTH_RESET_RATE_LIMIT", "5" if ENVIRONMENT == "production" else "10000"))
+    AUTH_RATE_WINDOW_SEC: int = int(os.environ.get("AUTH_RATE_WINDOW_SEC", "3600"))
+    AI_PLAN_RATE_LIMIT: int = int(os.environ.get("AI_PLAN_RATE_LIMIT", "20" if ENVIRONMENT == "production" else "10000"))
+    ANALYZE_RATE_LIMIT: int = int(os.environ.get("ANALYZE_RATE_LIMIT", "30" if ENVIRONMENT == "production" else "10000"))
+    RENDER_RATE_LIMIT: int = int(os.environ.get("RENDER_RATE_LIMIT", "10" if ENVIRONMENT == "production" else "10000"))
+    UPLOAD_REQUEST_RATE_LIMIT: int = int(os.environ.get("UPLOAD_REQUEST_RATE_LIMIT", "60" if ENVIRONMENT == "production" else "10000"))
+    EXPENSIVE_ACTION_RATE_WINDOW_SEC: int = int(
+        os.environ.get("EXPENSIVE_ACTION_RATE_WINDOW_SEC", "3600")
+    )
     MEDIA_INTELLIGENCE_TIMEOUT_SEC: int = int(
         os.environ.get("MEDIA_INTELLIGENCE_TIMEOUT_SEC", "900")
     )
@@ -126,13 +149,27 @@ class Settings:
         "PASSWORD_RESET_FROM_EMAIL", ""
     )
 
-    EMERGENT_AUTH_SESSION_URL: str = os.environ.get(
-        "EMERGENT_AUTH_SESSION_URL",
-        "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+    GOOGLE_AUTH_ENABLED: bool = (
+        os.environ.get("GOOGLE_AUTH_ENABLED", "false").lower() == "true"
     )
+    GOOGLE_CLIENT_IDS: list[str] = _csv_env("GOOGLE_CLIENT_IDS")
 
     STRIPE_PAID_PLANS_ENABLED: bool = (
         os.environ.get("STRIPE_PAID_PLANS_ENABLED", "false").lower() == "true"
+    )
+
+    # Incident controls: operators can disable cost-generating/public entry paths
+    # without rebuilding the application.
+    SIGNUPS_ENABLED: bool = os.environ.get("SIGNUPS_ENABLED", "true").lower() == "true"
+    AI_FEATURES_ENABLED: bool = (
+        os.environ.get("AI_FEATURES_ENABLED", "true").lower() == "true"
+    )
+    RENDERS_ENABLED: bool = os.environ.get("RENDERS_ENABLED", "true").lower() == "true"
+
+    # Observability. Sentry is optional for private beta but expected before public launch.
+    SENTRY_DSN: str = os.environ.get("SENTRY_DSN", "").strip()
+    SENTRY_TRACES_SAMPLE_RATE: float = float(
+        os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.05")
     )
 
     def validate_runtime(self) -> None:
@@ -198,6 +235,20 @@ class Settings:
                 raise RuntimeError(
                     "Production PASSWORD_RESET_URL_TEMPLATE must contain {token}"
                 )
+
+            if self.GOOGLE_AUTH_ENABLED and not self.GOOGLE_CLIENT_IDS:
+                raise RuntimeError(
+                    "GOOGLE_CLIENT_IDS is required when GOOGLE_AUTH_ENABLED=true"
+                )
+
+            if self.MAX_UPLOAD_BYTES <= 0 or self.MAX_USER_STORAGE_BYTES < self.MAX_UPLOAD_BYTES:
+                raise RuntimeError(
+                    "Production storage limits are invalid: MAX_USER_STORAGE_BYTES must be >= MAX_UPLOAD_BYTES"
+                )
+            if self.MAX_ACTIVE_RENDERS_PER_USER < 1:
+                raise RuntimeError("MAX_ACTIVE_RENDERS_PER_USER must be at least 1")
+            if not (0.0 <= self.SENTRY_TRACES_SAMPLE_RATE <= 1.0):
+                raise RuntimeError("SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1")
 
 
 

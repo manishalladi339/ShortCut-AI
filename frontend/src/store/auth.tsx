@@ -15,7 +15,8 @@ type AuthState = {
 type AuthContextValue = AuthState & {
   signin: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
-  google: (session_token: string) => Promise<void>;
+  google: (id_token: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
   signout: () => Promise<void>;
   refreshMe: () => Promise<void>;
 };
@@ -63,12 +64,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const google: AuthContextValue["google"] = useCallback(
-    async (session_token) => {
-      const r = await authApi.google(session_token);
+    async (id_token) => {
+      const r = await authApi.google(id_token);
       await finishAuth(r);
     },
     [finishAuth],
   );
+
+  const deleteAccount: AuthContextValue["deleteAccount"] = useCallback(async () => {
+    await authApi.deleteAccount();
+    await clearTokens();
+    setState({ user: null, loading: false });
+  }, []);
 
   const signout: AuthContextValue["signout"] = useCallback(async () => {
     try {
@@ -91,8 +98,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ ...state, signin, signup, google, signout, refreshMe }),
-    [state, signin, signup, google, signout, refreshMe],
+    () => ({ ...state, signin, signup, google, deleteAccount, signout, refreshMe }),
+    [state, signin, signup, google, deleteAccount, signout, refreshMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

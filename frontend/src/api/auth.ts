@@ -25,8 +25,8 @@ export const authApi = {
     api<AuthResponse>("/auth/signup", { method: "POST", body: { email, password, name }, auth: false }),
   login: (email: string, password: string) =>
     api<AuthResponse>("/auth/login", { method: "POST", body: { email, password }, auth: false }),
-  google: (session_token: string) =>
-    api<AuthResponse>("/auth/google", { method: "POST", body: { session_token }, auth: false }),
+  google: (id_token: string) =>
+    api<AuthResponse>("/auth/google", { method: "POST", body: { id_token }, auth: false }),
   me: () => api<UserPublic>("/auth/me"),
   forgotPassword: (email: string) =>
     api<{ ok: true }>("/auth/forgot-password", { method: "POST", body: { email }, auth: false }),
@@ -38,6 +38,11 @@ export const authApi = {
     }),
   logout: (refresh_token: string) =>
     api<{ ok: true }>("/auth/logout", { method: "POST", body: { refresh_token } }),
+  deleteAccount: () =>
+    api<{ ok: boolean }>("/users/me", {
+      method: "DELETE",
+      body: { confirmation: "DELETE" },
+    }),
   updateMe: (body: Partial<Pick<UserPublic, "name" | "user_type" | "niche" | "onboarding_complete" | "avatar_url">>) =>
     api<UserPublic>("/users/me", { method: "PATCH", body }),
 };
