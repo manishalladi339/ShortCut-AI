@@ -29,8 +29,6 @@ export const authApi = {
     }),
   login: (email: string, password: string) =>
     api<AuthResponse>("/auth/login", { method: "POST", body: { email, password }, auth: false }),
-  google: (session_token: string) =>
-    api<AuthResponse>("/auth/google", { method: "POST", body: { session_token }, auth: false }),
   me: () => api<UserPublic>("/auth/me"),
   forgotPassword: (email: string) =>
     api<{ ok: true }>("/auth/forgot-password", { method: "POST", body: { email }, auth: false }),
