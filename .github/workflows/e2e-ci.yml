@@ -1,0 +1,88 @@
+name: e2e-ci
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/e2e-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/e2e-ci.yml"
+
+jobs:
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19"
+
+      - name: Enable Yarn
+        run: corepack enable
+
+      - name: Start API and MongoDB
+        env:
+          OPENAI_API_KEY: ""
+        run: docker compose up -d --build mongo api
+
+      - name: Wait for API
+        run: |
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8001/api/v1/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs api
+          exit 1
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: yarn install --non-interactive --ignore-scripts
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Build web app
+        working-directory: frontend
+        env:
+          EXPO_PUBLIC_BACKEND_URL: http://127.0.0.1:8001
+        run: yarn build:web
+
+      - name: Serve web app
+        working-directory: frontend
+        run: |
+          python3 -m http.server 8081 --directory dist > /tmp/shortcut-web.log 2>&1 &
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8081 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/shortcut-web.log
+          exit 1
+
+      - name: Run browser smoke
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:8081
+        run: yarn test:e2e
+
+      - name: Show backend logs on failure
+        if: failure()
+        run: docker compose logs --no-color mongo api
+
+      - name: Stop services
+        if: always()
+        run: docker compose down -v
