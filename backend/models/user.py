@@ -36,7 +36,6 @@ class LoginBody(BaseModel):
 class GoogleAuthBody(BaseModel):
     id_token: str = Field(min_length=20)
     accept_terms: bool = False
-    accept_terms: bool = False
 
 
 class RefreshBody(BaseModel):
