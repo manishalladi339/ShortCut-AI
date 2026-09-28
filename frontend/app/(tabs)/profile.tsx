@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { authApi } from "@/src/api/auth";
 import { Button } from "@/src/components/ui/Button";
 import { useAuth } from "@/src/store/auth";
 import { colors, radius, spacing, typography } from "@/src/theme";
@@ -15,6 +16,31 @@ export default function Profile() {
   async function doSignout() {
     await signout();
     router.replace("/(auth)/welcome");
+  }
+
+  function confirmDeleteAccount() {
+    Alert.alert(
+      "Delete account permanently?",
+      "This removes your account, projects, AI history, uploaded media and exports. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await authApi.deleteMe();
+              await doSignout();
+            } catch (e: any) {
+              Alert.alert(
+                "Could not delete account",
+                e?.message ?? "Please try again. Your account has not been deleted.",
+              );
+            }
+          },
+        },
+      ],
+    );
   }
 
   if (!user) return null;
@@ -57,8 +83,16 @@ export default function Profile() {
           <Row icon="help-circle" label="Help & Support" testID="profile-help-row" />
         </View>
 
-        <View style={{ paddingHorizontal: spacing.screenPadding, marginTop: spacing.xl }}>
+        <View style={{ paddingHorizontal: spacing.screenPadding, marginTop: spacing.xl, gap: spacing.md }}>
           <Button label="Sign out" variant="secondary" onPress={doSignout} testID="profile-signout-button" />
+          <Pressable
+            onPress={confirmDeleteAccount}
+            testID="profile-delete-account-button"
+            style={styles.deleteButton}
+          >
+            <Ionicons name="trash-outline" color={colors.danger} size={18} />
+            <Text style={[typography.bodyMed, { color: colors.danger }]}>Delete account permanently</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -127,5 +161,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.aiAccentMuted,
     alignItems: "center",
     justifyContent: "center",
+  },
+  deleteButton: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: radius.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
 });
