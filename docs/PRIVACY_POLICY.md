@@ -87,7 +87,7 @@ Active account data is retained while needed to provide the service.
 
 Expired sessions and password-reset records are automatically aged out by database expiry indexes.
 
-Users can delete individual assets or permanently delete their account. Account deletion removes owned application records and stored media/exports after active background jobs have finished.
+Users can delete individual assets or permanently delete their account. Account deletion revokes user-scoped queued/running work, removes owned application records, and deletes stored media/exports under the user's private storage prefix. Worker lease fencing prevents cancelled/stale work from committing after deletion.
 
 Infrastructure backups, provider security logs, billing records or records required by law may remain for a limited period according to the applicable provider/operator retention policy.
 
