@@ -102,7 +102,7 @@ export default function SignIn() {
     setErr(null);
     setBusy(true);
     try {
-      await google(idToken);
+      await google(idToken, true);
       router.replace("/(tabs)/dashboard");
     } finally {
       setBusy(false);
@@ -172,6 +172,23 @@ export default function SignIn() {
                   </Text>
                   <View style={styles.line} />
                 </View>
+                <Text style={[typography.caption, styles.googleConsent]}>
+                  By continuing with Google, you agree to the{" "}
+                  <Text
+                    style={styles.link}
+                    onPress={() => router.push("/legal/terms" as any)}
+                  >
+                    Terms of Service
+                  </Text>{" "}
+                  and{" "}
+                  <Text
+                    style={styles.link}
+                    onPress={() => router.push("/legal/privacy" as any)}
+                  >
+                    Privacy Policy
+                  </Text>
+                  .
+                </Text>
                 <GoogleButton busy={busy} onToken={loginWithGoogle} onError={setErr} />
               </>
             ) : null}
@@ -197,4 +214,6 @@ const styles = StyleSheet.create({
   back: { paddingVertical: spacing.sm, marginBottom: spacing.lg },
   divider: { flexDirection: "row", alignItems: "center", marginVertical: spacing.md },
   line: { flex: 1, height: 1, backgroundColor: colors.surface2 },
+  googleConsent: { color: colors.textLow, textAlign: "center", lineHeight: 18 },
+  link: { color: colors.aiAccent, textDecorationLine: "underline" },
 });
