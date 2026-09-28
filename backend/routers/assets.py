@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, Response
 
+from core.config import settings
 from core.deps import get_current_user
 from core.security import utc_now
 from db.mongo import get_db
@@ -21,7 +22,9 @@ from models.asset import (
 from models.common import AssetKind, UploadStatus
 from models.job import JobType
 from services import job_service
+from services.rate_limit import enforce_rate_limit
 from services.storage import LocalStorage, get_storage
+from services.usage_limits import enforce_confirmed_upload_size, enforce_upload_limits
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -36,6 +39,13 @@ def _to_out(doc: dict, refresh_download_url: bool = True) -> AssetOut:
 async def presign_upload(
     body: PresignUploadBody, user: dict = Depends(get_current_user)
 ) -> PresignUploadOut:
+    await enforce_rate_limit(
+        scope="upload.presign",
+        key=user["id"],
+        limit=settings.UPLOAD_REQUEST_RATE_LIMIT,
+        window_seconds=settings.EXPENSIVE_ACTION_RATE_WINDOW_SEC,
+    )
+    await enforce_upload_limits(user_id=user["id"], requested_bytes=body.size_bytes)
     db = get_db()
     if body.project_id:
         project = await db.projects.find_one(
@@ -116,6 +126,11 @@ async def confirm_upload(
             status_code=400,
             detail={"error": {"code": "asset.empty", "message": "Uploaded file is empty"}},
         )
+    await enforce_confirmed_upload_size(
+        user_id=user["id"],
+        asset_id=asset_id,
+        actual_bytes=actual_size,
+    )
 
     # Confirmation is idempotent: do not enqueue duplicate processing jobs.
     if doc.get("upload_status") == UploadStatus.uploaded.value and doc.get("processing_job_id"):
