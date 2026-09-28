@@ -6,6 +6,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pymongo.errors import DuplicateKeyError
 
+from core.config import settings
 from core.deps import get_current_user
 from core.security import utc_now
 from db.mongo import get_db
@@ -15,7 +16,9 @@ from models.render_plan import RenderPlan
 from services import job_service
 from services.export_recovery import export_updates_from_job
 from services.render_plan import compile_render_plan
+from services.rate_limit import enforce_rate_limit
 from services.storage import get_storage
+from services.usage_limits import enforce_render_concurrency
 
 router = APIRouter(prefix="/projects", tags=["render"])
 
@@ -84,6 +87,13 @@ async def create_export(
     body: ExportRequest,
     user: dict = Depends(get_current_user),
 ) -> ExportOut:
+    await enforce_rate_limit(
+        scope="render.create",
+        key=user["id"],
+        limit=settings.RENDER_RATE_LIMIT,
+        window_seconds=settings.EXPENSIVE_ACTION_RATE_WINDOW_SEC,
+    )
+    await enforce_render_concurrency(user_id=user["id"])
     plan = await compile_render_plan(
         project_id=project_id,
         user_id=user["id"],
