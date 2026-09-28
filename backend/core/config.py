@@ -17,6 +17,13 @@ def _csv_env(name: str, default: str = "") -> list[str]:
     ]
 
 
+def _bool_env(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class Settings:
     ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "development").strip().lower()
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
@@ -38,6 +45,38 @@ class Settings:
 
     APP_PUBLIC_URL: str = os.environ.get("APP_PUBLIC_URL", "http://localhost:8001")
 
+    # Public-beta abuse/cost controls.
+    RATE_LIMIT_ENABLED: bool = _bool_env(
+        "RATE_LIMIT_ENABLED", default=ENVIRONMENT == "production"
+    )
+    RATE_LIMIT_AUTH_PER_MIN: int = int(os.environ.get("RATE_LIMIT_AUTH_PER_MIN", "12"))
+    RATE_LIMIT_UPLOAD_PER_MIN: int = int(os.environ.get("RATE_LIMIT_UPLOAD_PER_MIN", "30"))
+    RATE_LIMIT_AI_PER_MIN: int = int(os.environ.get("RATE_LIMIT_AI_PER_MIN", "20"))
+    RATE_LIMIT_RENDER_PER_MIN: int = int(os.environ.get("RATE_LIMIT_RENDER_PER_MIN", "8"))
+    MAX_UPLOAD_BYTES: int = int(os.environ.get("MAX_UPLOAD_BYTES", str(1024 * 1024 * 1024)))
+    MAX_USER_STORAGE_BYTES: int = int(
+        os.environ.get("MAX_USER_STORAGE_BYTES", str(10 * 1024 * 1024 * 1024))
+    )
+    MAX_MEDIA_DURATION_SEC: int = int(os.environ.get("MAX_MEDIA_DURATION_SEC", "3600"))
+    MAX_DAILY_INTELLIGENCE_JOBS_FREE: int = int(
+        os.environ.get("MAX_DAILY_INTELLIGENCE_JOBS_FREE", "20")
+    )
+    MAX_DAILY_RENDER_JOBS_FREE: int = int(
+        os.environ.get("MAX_DAILY_RENDER_JOBS_FREE", "10")
+    )
+    MAX_DAILY_AI_REQUESTS_FREE: int = int(
+        os.environ.get("MAX_DAILY_AI_REQUESTS_FREE", "30")
+    )
+    MAX_CONCURRENT_RENDER_JOBS_FREE: int = int(
+        os.environ.get("MAX_CONCURRENT_RENDER_JOBS_FREE", "2")
+    )
+
+    # Error monitoring. No PII is intentionally attached by ShortCut.
+    SENTRY_DSN: str = os.environ.get("SENTRY_DSN", "").strip()
+    SENTRY_TRACES_SAMPLE_RATE: float = float(
+        os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.05")
+    )
+
     # Storage
     STORAGE_BACKEND: str = os.environ.get(
         "STORAGE_BACKEND", os.environ.get("S3_BACKEND", "local")
@@ -53,46 +92,24 @@ class Settings:
     MEDIA_PROBE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_PROBE_TIMEOUT_SEC", "30"))
     MEDIA_DERIVATIVE_TIMEOUT_SEC: int = int(os.environ.get("MEDIA_DERIVATIVE_TIMEOUT_SEC", "180"))
     RENDER_TIMEOUT_SEC: int = int(os.environ.get("RENDER_TIMEOUT_SEC", "900"))
-    AUDIO_MASTERING_ENABLED: bool = (
-        os.environ.get("AUDIO_MASTERING_ENABLED", "true").lower() == "true"
-    )
+    AUDIO_MASTERING_ENABLED: bool = _bool_env("AUDIO_MASTERING_ENABLED", True)
     AUDIO_TARGET_LUFS: float = float(os.environ.get("AUDIO_TARGET_LUFS", "-14.0"))
-    AUDIO_TRUE_PEAK_DBTP: float = float(
-        os.environ.get("AUDIO_TRUE_PEAK_DBTP", "-1.5")
-    )
+    AUDIO_TRUE_PEAK_DBTP: float = float(os.environ.get("AUDIO_TRUE_PEAK_DBTP", "-1.5"))
     AUDIO_TARGET_LRA: float = float(os.environ.get("AUDIO_TARGET_LRA", "11.0"))
     WORKER_POLL_INTERVAL_SEC: float = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "1.0"))
     JOB_LEASE_SECONDS: int = int(os.environ.get("JOB_LEASE_SECONDS", "1200"))
     MEDIA_INTELLIGENCE_TIMEOUT_SEC: int = int(
         os.environ.get("MEDIA_INTELLIGENCE_TIMEOUT_SEC", "900")
     )
-    SCENE_DETECTION_THRESHOLD: float = float(
-        os.environ.get("SCENE_DETECTION_THRESHOLD", "0.35")
-    )
-    SILENCE_NOISE_DB: float = float(
-        os.environ.get("SILENCE_NOISE_DB", "-35")
-    )
-    SILENCE_MIN_DURATION_SEC: float = float(
-        os.environ.get("SILENCE_MIN_DURATION_SEC", "0.35")
-    )
-    SILENCE_SNAP_WINDOW_SEC: float = float(
-        os.environ.get("SILENCE_SNAP_WINDOW_SEC", "0.75")
-    )
-    RHYTHM_WINDOW_MS: float = float(
-        os.environ.get("RHYTHM_WINDOW_MS", "50")
-    )
-    RHYTHM_BASELINE_SEC: float = float(
-        os.environ.get("RHYTHM_BASELINE_SEC", "0.4")
-    )
-    RHYTHM_ENERGY_RATIO: float = float(
-        os.environ.get("RHYTHM_ENERGY_RATIO", "1.8")
-    )
-    RHYTHM_MIN_RMS: float = float(
-        os.environ.get("RHYTHM_MIN_RMS", "300")
-    )
-    RHYTHM_MIN_INTERVAL_SEC: float = float(
-        os.environ.get("RHYTHM_MIN_INTERVAL_SEC", "0.25")
-    )
+    SCENE_DETECTION_THRESHOLD: float = float(os.environ.get("SCENE_DETECTION_THRESHOLD", "0.35"))
+    SILENCE_NOISE_DB: float = float(os.environ.get("SILENCE_NOISE_DB", "-35"))
+    SILENCE_MIN_DURATION_SEC: float = float(os.environ.get("SILENCE_MIN_DURATION_SEC", "0.35"))
+    SILENCE_SNAP_WINDOW_SEC: float = float(os.environ.get("SILENCE_SNAP_WINDOW_SEC", "0.75"))
+    RHYTHM_WINDOW_MS: float = float(os.environ.get("RHYTHM_WINDOW_MS", "50"))
+    RHYTHM_BASELINE_SEC: float = float(os.environ.get("RHYTHM_BASELINE_SEC", "0.4"))
+    RHYTHM_ENERGY_RATIO: float = float(os.environ.get("RHYTHM_ENERGY_RATIO", "1.8"))
+    RHYTHM_MIN_RMS: float = float(os.environ.get("RHYTHM_MIN_RMS", "300"))
+    RHYTHM_MIN_INTERVAL_SEC: float = float(os.environ.get("RHYTHM_MIN_INTERVAL_SEC", "0.25"))
 
     # Speech / AI providers
     TRANSCRIPTION_PROVIDER: str = os.environ.get("TRANSCRIPTION_PROVIDER", "openai")
@@ -103,46 +120,41 @@ class Settings:
     VISION_MODEL: str = os.environ.get("VISION_MODEL", "gpt-4o")
     MAX_VISION_FRAMES: int = int(os.environ.get("MAX_VISION_FRAMES", "8"))
     EMBEDDING_PROVIDER: str = os.environ.get("EMBEDDING_PROVIDER", "openai")
-    EMBEDDING_MODEL: str = os.environ.get(
-        "EMBEDDING_MODEL", "text-embedding-3-small"
-    )
+    EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
     NARRATIVE_PROVIDER: str = os.environ.get("NARRATIVE_PROVIDER", "deterministic")
     NARRATIVE_MODEL: str = os.environ.get("NARRATIVE_MODEL", "gpt-5-mini")
     AI_PLANNER_TIMEOUT_SEC: int = int(os.environ.get("AI_PLANNER_TIMEOUT_SEC", "120"))
     OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
-    OPENAI_API_BASE: str = os.environ.get(
-        "OPENAI_API_BASE", "https://api.openai.com/v1"
-    )
+    OPENAI_API_BASE: str = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
 
     # Transactional email for password-reset delivery.
     PASSWORD_RESET_EMAIL_PROVIDER: str = os.environ.get(
         "PASSWORD_RESET_EMAIL_PROVIDER", "disabled"
     ).strip().lower()
-    PASSWORD_RESET_URL_TEMPLATE: str = os.environ.get(
-        "PASSWORD_RESET_URL_TEMPLATE", ""
-    )
+    PASSWORD_RESET_URL_TEMPLATE: str = os.environ.get("PASSWORD_RESET_URL_TEMPLATE", "")
     RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
-    PASSWORD_RESET_FROM_EMAIL: str = os.environ.get(
-        "PASSWORD_RESET_FROM_EMAIL", ""
-    )
+    PASSWORD_RESET_FROM_EMAIL: str = os.environ.get("PASSWORD_RESET_FROM_EMAIL", "")
 
-    EMERGENT_AUTH_SESSION_URL: str = os.environ.get(
-        "EMERGENT_AUTH_SESSION_URL",
-        "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-    )
-
-    STRIPE_PAID_PLANS_ENABLED: bool = (
-        os.environ.get("STRIPE_PAID_PLANS_ENABLED", "false").lower() == "true"
-    )
+    STRIPE_PAID_PLANS_ENABLED: bool = _bool_env("STRIPE_PAID_PLANS_ENABLED", False)
 
     def validate_runtime(self) -> None:
         if self.ENVIRONMENT not in {"development", "test", "staging", "production"}:
-            raise RuntimeError(
-                "ENVIRONMENT must be development, test, staging, or production"
-            )
+            raise RuntimeError("ENVIRONMENT must be development, test, staging, or production")
 
         if not self.CORS_ORIGINS:
             raise RuntimeError("CORS_ORIGINS must contain at least one allowed origin")
+
+        numeric_limits = {
+            "MAX_UPLOAD_BYTES": self.MAX_UPLOAD_BYTES,
+            "MAX_USER_STORAGE_BYTES": self.MAX_USER_STORAGE_BYTES,
+            "MAX_MEDIA_DURATION_SEC": self.MAX_MEDIA_DURATION_SEC,
+            "MAX_DAILY_INTELLIGENCE_JOBS_FREE": self.MAX_DAILY_INTELLIGENCE_JOBS_FREE,
+            "MAX_DAILY_RENDER_JOBS_FREE": self.MAX_DAILY_RENDER_JOBS_FREE,
+            "MAX_DAILY_AI_REQUESTS_FREE": self.MAX_DAILY_AI_REQUESTS_FREE,
+            "MAX_CONCURRENT_RENDER_JOBS_FREE": self.MAX_CONCURRENT_RENDER_JOBS_FREE,
+        }
+        if any(value <= 0 for value in numeric_limits.values()):
+            raise RuntimeError("Public-beta usage limits must all be positive")
 
         if self.ENVIRONMENT == "production":
             weak_secrets = {
@@ -160,9 +172,10 @@ class Settings:
 
             public = urlparse(self.APP_PUBLIC_URL)
             if public.scheme != "https" or not public.netloc:
-                raise RuntimeError(
-                    "Production APP_PUBLIC_URL must be an absolute https URL"
-                )
+                raise RuntimeError("Production APP_PUBLIC_URL must be an absolute https URL")
+
+            if not self.RATE_LIMIT_ENABLED:
+                raise RuntimeError("Production RATE_LIMIT_ENABLED must be true")
 
             if self.STORAGE_BACKEND.lower() != "s3":
                 raise RuntimeError(
@@ -184,6 +197,9 @@ class Settings:
                     "OPENAI_API_KEY is required for configured production AI providers"
                 )
 
+            if not self.SENTRY_DSN:
+                raise RuntimeError("Production SENTRY_DSN is required for error monitoring")
+
             if self.PASSWORD_RESET_EMAIL_PROVIDER != "resend":
                 raise RuntimeError(
                     "Production PASSWORD_RESET_EMAIL_PROVIDER must be 'resend'"
@@ -191,15 +207,11 @@ class Settings:
             if not self.RESEND_API_KEY:
                 raise RuntimeError("Production RESEND_API_KEY is required")
             if not self.PASSWORD_RESET_FROM_EMAIL:
-                raise RuntimeError(
-                    "Production PASSWORD_RESET_FROM_EMAIL is required"
-                )
+                raise RuntimeError("Production PASSWORD_RESET_FROM_EMAIL is required")
             if "{token}" not in self.PASSWORD_RESET_URL_TEMPLATE:
                 raise RuntimeError(
                     "Production PASSWORD_RESET_URL_TEMPLATE must contain {token}"
                 )
-
-
 
 
 settings = Settings()
