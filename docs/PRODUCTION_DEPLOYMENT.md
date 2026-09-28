@@ -6,6 +6,7 @@ in front of the API.
 
 ## Runtime topology
 
+- **Caddy** — public HTTPS edge; terminates TLS and reverse-proxies to the API.
 - **Caddy** — public ports 80/443, automatic HTTPS and reverse proxy.
 - **API** — FastAPI auth/projects/editor/render endpoints; not directly internet-exposed.
 - **Media worker** — probes uploads and creates derivatives.
@@ -17,6 +18,21 @@ in front of the API.
 - **Resend** — account-security/password-reset email.
 
 Do not use local filesystem storage across independent production containers.
+
+## HTTPS edge
+
+Set `SHORTCUT_API_DOMAIN` in `.env.production` and point that hostname to the deployment server before starting the stack. Caddy listens on ports 80/443 and obtains/renews the certificate automatically. The FastAPI port is bound to loopback for diagnostics instead of being exposed directly to the internet.
+
+Validate the edge config before rollout:
+
+```bash
+docker run --rm \
+  -e SHORTCUT_API_DOMAIN=api.example.com \
+  -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+```
+
+For direct browser uploads, apply `deploy/s3-cors.json` to the private S3 bucket after replacing the example frontend origin.
 
 ## Prerequisites
 
