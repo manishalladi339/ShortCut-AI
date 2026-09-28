@@ -9,8 +9,10 @@ services:
     environment: &backend-env
       ENVIRONMENT: production
       STORAGE_BACKEND: s3
+    expose:
+      - "8001"
     ports:
-      - "${SHORTCUT_API_PORT:-8001}:8001"
+      - "127.0.0.1:${SHORTCUT_API_PORT:-8001}:8001"
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8001/api/v1/ready >/dev/null || exit 1"]
       interval: 30s
@@ -18,6 +20,23 @@ services:
       start_period: 30s
       retries: 5
     stop_grace_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
 
   media-worker:
     image: shortcut-ai-backend:${SHORTCUT_IMAGE_TAG:-latest}
@@ -60,3 +79,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
