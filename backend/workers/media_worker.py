@@ -62,22 +62,10 @@ async def _recover_stale_assets() -> None:
         asset_id = job.get("asset_id")
         if not asset_id:
             continue
-        status = (
-            "queued"
-            if job["recovered_status"] == JobStatus.queued.value
-            else "failed"
-        )
+        status = "queued" if job["recovered_status"] == JobStatus.queued.value else "failed"
         await get_db().assets.update_one(
-            {
-                "id": asset_id,
-                "processing_status": {"$ne": "ready"},
-            },
-            {
-                "$set": {
-                    "processing_status": status,
-                    "updated_at": utc_now(),
-                }
-            },
+            {"id": asset_id, "processing_status": {"$ne": "ready"}},
+            {"$set": {"processing_status": status, "updated_at": utc_now()}},
         )
 
 
@@ -122,6 +110,9 @@ async def process_one() -> bool:
         if await _complete_already_processed(job, asset):
             return True
 
+        if int(asset.get("size_bytes") or 0) > settings.MAX_UPLOAD_BYTES:
+            raise MediaProbeError("media exceeds the configured maximum upload size")
+
         await db.assets.update_one(
             {"id": asset["id"]},
             {"$set": {"processing_status": "processing", "updated_at": utc_now()}},
@@ -131,6 +122,11 @@ async def process_one() -> bool:
         suffix = Path(asset["filename"]).suffix
         with materialize(asset["storage_key"], suffix=suffix) as local_path:
             metadata = probe(local_path)
+            duration = float(metadata.get("duration_sec") or 0.0)
+            if duration > settings.MAX_MEDIA_DURATION_SEC:
+                raise MediaProbeError(
+                    f"media duration exceeds the {settings.MAX_MEDIA_DURATION_SEC}-second public-beta limit"
+                )
             await _progress(job, 45)
             derivatives = generate_derivatives(
                 source_path=local_path,
@@ -139,7 +135,6 @@ async def process_one() -> bool:
             )
 
         await _progress(job, 80)
-        # Extend/fence ownership immediately before durable completion writes.
         await _progress(job, 95)
         await db.assets.update_one(
             {"id": asset["id"]},
