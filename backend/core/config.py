@@ -192,19 +192,28 @@ class Settings:
                     self.EMBEDDING_PROVIDER,
                 )
             )
-            if uses_openai and not self.OPENAI_API_KEY:
+            if uses_openai and (
+                not self.OPENAI_API_KEY
+                or self.OPENAI_API_KEY.upper().startswith("REPLACE_WITH")
+            ):
                 raise RuntimeError(
                     "OPENAI_API_KEY is required for configured production AI providers"
                 )
 
-            if not self.SENTRY_DSN:
+            if (
+                not self.SENTRY_DSN
+                or self.SENTRY_DSN.upper().startswith("REPLACE_WITH")
+            ):
                 raise RuntimeError("Production SENTRY_DSN is required for error monitoring")
 
             if self.PASSWORD_RESET_EMAIL_PROVIDER != "resend":
                 raise RuntimeError(
                     "Production PASSWORD_RESET_EMAIL_PROVIDER must be 'resend'"
                 )
-            if not self.RESEND_API_KEY:
+            if (
+                not self.RESEND_API_KEY
+                or self.RESEND_API_KEY.upper().startswith("REPLACE_WITH")
+            ):
                 raise RuntimeError("Production RESEND_API_KEY is required")
             if not self.PASSWORD_RESET_FROM_EMAIL:
                 raise RuntimeError("Production PASSWORD_RESET_FROM_EMAIL is required")
