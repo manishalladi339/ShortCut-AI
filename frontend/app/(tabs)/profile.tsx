@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "@/src/components/ui/Button";
@@ -10,11 +10,33 @@ import { colors, radius, spacing, typography } from "@/src/theme";
 export default function Profile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, signout } = useAuth();
+  const { user, signout, deleteAccount } = useAuth();
 
   async function doSignout() {
     await signout();
     router.replace("/(auth)/welcome");
+  }
+
+  function confirmDeleteAccount() {
+    Alert.alert(
+      "Delete account?",
+      "This permanently deletes your ShortCut AI account, projects, uploads and exports. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteAccount();
+              router.replace("/(auth)/welcome");
+            } catch (e: any) {
+              Alert.alert("Could not delete account", e?.message ?? "Try again");
+            }
+          },
+        },
+      ],
+    );
   }
 
   if (!user) return null;
@@ -59,6 +81,13 @@ export default function Profile() {
 
         <View style={{ paddingHorizontal: spacing.screenPadding, marginTop: spacing.xl }}>
           <Button label="Sign out" variant="secondary" onPress={doSignout} testID="profile-signout-button" />
+          <View style={{ height: spacing.md }} />
+          <Button
+            label="Delete account"
+            variant="secondary"
+            onPress={confirmDeleteAccount}
+            testID="profile-delete-account-button"
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
