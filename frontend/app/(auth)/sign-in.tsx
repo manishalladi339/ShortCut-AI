@@ -1,7 +1,7 @@
 import * as Google from "expo-auth-session/providers/google";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -98,7 +98,7 @@ export default function SignIn() {
     }
   }
 
-  async function loginWithGoogle(idToken: string) {
+  const loginWithGoogle = useCallback(async (idToken: string) => {
     setErr(null);
     setBusy(true);
     try {
@@ -107,7 +107,7 @@ export default function SignIn() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [google, router]);
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
