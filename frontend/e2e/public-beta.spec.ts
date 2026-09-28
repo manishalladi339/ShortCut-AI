@@ -10,7 +10,7 @@ test("public auth entry is reachable and has no Emergent Google dependency", asy
   await expect(page.getByPlaceholder("you@example.com")).toBeVisible();
 });
 
-test("client-side signup password validation works before API submission", async ({ page }) => {
+test("signup requires terms acceptance and validates password locally", async ({ page }) => {
   await page.goto("/");
   await page.getByText("Create account").first().click();
 
@@ -19,6 +19,13 @@ test("client-side signup password validation works before API submission", async
   await page.getByPlaceholder("you@example.com").fill("tester@example.com");
   await page.getByPlaceholder("At least 8 characters").fill("short");
   await page.getByText("Create account").last().click();
-
   await expect(page.getByText("Password must be at least 8 characters")).toBeVisible();
+
+  await page.getByPlaceholder("At least 8 characters").fill("Demo12345!");
+  await page.getByText("Create account").last().click();
+  await expect(page.getByText("Please accept the Terms and Privacy Policy")).toBeVisible();
+
+  await page.getByTestId("signup-terms-switch").click();
+  await page.getByText("Terms of Service").click();
+  await expect(page.getByText("Terms of Service").first()).toBeVisible();
 });
