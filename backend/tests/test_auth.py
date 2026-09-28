@@ -6,7 +6,15 @@ import requests
 
 def test_signup_returns_user_and_tokens(api_url, session):
     email = f"test_{uuid.uuid4().hex[:10]}@shortcut.ai"
-    r = session.post(f"{api_url}/auth/signup", json={"email": email, "password": "Demo12345!", "name": "Auth Sign"})
+    r = session.post(
+        f"{api_url}/auth/signup",
+        json={
+            "email": email,
+            "password": "Demo12345!",
+            "name": "Auth Sign",
+            "accept_terms": True,
+        },
+    )
     assert r.status_code == 201, r.text
     body = r.json()
     assert "user" in body and "access_token" in body and "refresh_token" in body
@@ -14,10 +22,30 @@ def test_signup_returns_user_and_tokens(api_url, session):
     assert body["user"]["subscription_tier"] == "free"
 
 
+
+def test_signup_requires_terms_acceptance(api_url, session):
+    email = f"terms_{uuid.uuid4().hex[:10]}@shortcut.ai"
+    r = session.post(
+        f"{api_url}/auth/signup",
+        json={
+            "email": email,
+            "password": "Demo12345!",
+            "name": "Terms Test",
+            "accept_terms": False,
+        },
+    )
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "auth.terms_required"
+
 def test_signup_duplicate_email_409(api_url, session, fresh_user):
     r = session.post(
         f"{api_url}/auth/signup",
-        json={"email": fresh_user["email"], "password": "Anything123!", "name": "x"},
+        json={
+            "email": fresh_user["email"],
+            "password": "Anything123!",
+            "name": "x",
+            "accept_terms": True,
+        },
     )
     assert r.status_code == 409
     body = r.json()
