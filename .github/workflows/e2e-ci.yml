@@ -1,0 +1,43 @@
+name: e2e-ci
+
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/e2e-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/e2e-ci.yml"
+
+jobs:
+  web-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enable Yarn
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --non-interactive --ignore-scripts
+
+      - name: Install Playwright Chromium
+        run: yarn playwright install --with-deps chromium
+
+      - name: Build production web bundle
+        env:
+          EXPO_PUBLIC_BACKEND_URL: https://api.shortcut.example
+        run: yarn build:web
+
+      - name: Run browser smoke tests
+        run: yarn e2e
