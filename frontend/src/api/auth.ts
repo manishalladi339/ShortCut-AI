@@ -21,12 +21,20 @@ export interface AuthResponse {
 }
 
 export const authApi = {
-  signup: (email: string, password: string, name: string) =>
-    api<AuthResponse>("/auth/signup", { method: "POST", body: { email, password, name }, auth: false }),
+  signup: (email: string, password: string, name: string, accept_terms: boolean) =>
+    api<AuthResponse>("/auth/signup", {
+      method: "POST",
+      body: { email, password, name, accept_terms },
+      auth: false,
+    }),
   login: (email: string, password: string) =>
     api<AuthResponse>("/auth/login", { method: "POST", body: { email, password }, auth: false }),
-  google: (id_token: string) =>
-    api<AuthResponse>("/auth/google", { method: "POST", body: { id_token }, auth: false }),
+  google: (id_token: string, accept_terms: boolean) =>
+    api<AuthResponse>("/auth/google", {
+      method: "POST",
+      body: { id_token, accept_terms },
+      auth: false,
+    }),
   me: () => api<UserPublic>("/auth/me"),
   forgotPassword: (email: string) =>
     api<{ ok: true }>("/auth/forgot-password", { method: "POST", body: { email }, auth: false }),
