@@ -189,6 +189,17 @@ export default function SignIn() {
                   </Text>
                   .
                 </Text>
+                <Text style={[typography.caption, { color: colors.textLow, textAlign: "center" }]}>
+                  By continuing with Google, you agree to the{" "}
+                  <Text style={styles.legalLink} onPress={() => router.push("/legal/terms" as any)}>
+                    Terms
+                  </Text>{" "}
+                  and{" "}
+                  <Text style={styles.legalLink} onPress={() => router.push("/legal/privacy" as any)}>
+                    Privacy Policy
+                  </Text>
+                  .
+                </Text>
                 <GoogleButton busy={busy} onToken={loginWithGoogle} onError={setErr} />
               </>
             ) : null}
