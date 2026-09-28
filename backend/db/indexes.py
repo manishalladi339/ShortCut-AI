@@ -114,3 +114,10 @@ async def ensure_indexes() -> None:
     await db.audit_logs.create_index("user_id")
     await db.audit_logs.create_index("action")
     await db.audit_logs.create_index([("created_at", -1)])
+
+    await db.rate_limits.create_index(
+        [("scope", 1), ("key", 1), ("bucket", 1)],
+        unique=True,
+        name="uniq_rate_limit_bucket",
+    )
+    await db.rate_limits.create_index("expires_at", expireAfterSeconds=0)
