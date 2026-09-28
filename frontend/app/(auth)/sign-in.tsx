@@ -1,7 +1,7 @@
-import * as Linking from "expo-linking";
+import * as Google from "expo-auth-session/providers/google";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -18,7 +18,64 @@ import { Input } from "@/src/components/ui/Input";
 import { useAuth } from "@/src/store/auth";
 import { colors, spacing, typography } from "@/src/theme";
 
-const AUTH_HOST = "https://auth.emergentagent.com";
+WebBrowser.maybeCompleteAuthSession();
+
+const GOOGLE_IDS = {
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+};
+
+function googleConfigured(): boolean {
+  if (Platform.OS === "web") return Boolean(GOOGLE_IDS.webClientId);
+  if (Platform.OS === "ios") return Boolean(GOOGLE_IDS.iosClientId);
+  if (Platform.OS === "android") return Boolean(GOOGLE_IDS.androidClientId);
+  return false;
+}
+
+function GoogleButton({
+  busy,
+  onToken,
+  onError,
+}: {
+  busy: boolean;
+  onToken: (token: string) => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    webClientId: GOOGLE_IDS.webClientId,
+    iosClientId: GOOGLE_IDS.iosClientId,
+    androidClientId: GOOGLE_IDS.androidClientId,
+    selectAccount: true,
+  });
+
+  useEffect(() => {
+    if (!response) return;
+    if (response.type !== "success") {
+      if (response.type === "error") onError("Google sign-in failed");
+      return;
+    }
+    const params = response.params as Record<string, string | undefined>;
+    const idToken = params.id_token ?? response.authentication?.idToken ?? undefined;
+    if (!idToken) {
+      onError("Google did not return an identity token");
+      return;
+    }
+    onToken(idToken).catch((e: any) =>
+      onError(e?.message ?? "Google sign-in failed"),
+    );
+  }, [response, onToken, onError]);
+
+  return (
+    <Button
+      label="Continue with Google"
+      variant="secondary"
+      disabled={!request || busy}
+      onPress={() => promptAsync()}
+      testID="auth-google-login-button"
+    />
+  );
+}
 
 export default function SignIn() {
   const router = useRouter();
@@ -41,42 +98,14 @@ export default function SignIn() {
     }
   }
 
-  async function loginWithGoogle() {
+  async function loginWithGoogle(idToken: string) {
     setErr(null);
+    setBusy(true);
     try {
-      const redirectUrl =
-        Platform.OS === "web"
-          ? (typeof window !== "undefined" ? window.location.origin + "/" : "/")
-          : Linking.createURL("auth");
-      const authUrl = `${AUTH_HOST}/?redirect=${encodeURIComponent(redirectUrl)}`;
-      if (Platform.OS === "web") {
-        // Full redirect on web
-        if (typeof window !== "undefined") window.location.href = authUrl;
-        return;
-      }
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
-      if (result.type !== "success" || !result.url) return;
-      const url = result.url;
-      const hashIdx = url.indexOf("#");
-      const fragment = hashIdx >= 0 ? url.slice(hashIdx + 1) : "";
-      const queryIdx = url.indexOf("?");
-      const queryPart = queryIdx >= 0 ? url.slice(queryIdx + 1).split("#")[0] : "";
-      const params = new URLSearchParams(fragment || queryPart);
-      const sessionId = params.get("session_id");
-      if (!sessionId) {
-        setErr("Google sign-in cancelled");
-        return;
-      }
-      // Fetch session data from Emergent
-      const r = await fetch("https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data", {
-        headers: { "X-Session-ID": sessionId },
-      });
-      if (!r.ok) throw new Error("Failed to verify Google session");
-      const data = await r.json();
-      await google(data.session_token);
+      await google(idToken);
       router.replace("/(tabs)/dashboard");
-    } catch (e: any) {
-      setErr(e?.message ?? "Google sign-in failed");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -134,19 +163,18 @@ export default function SignIn() {
               </Text>
             ) : null}
             <Button label="Sign in" onPress={submit} loading={busy} testID="auth-signin-submit-button" />
-            <View style={styles.divider}>
-              <View style={styles.line} />
-              <Text style={[typography.caption, { color: colors.textLow, marginHorizontal: 12 }]}>
-                or continue with
-              </Text>
-              <View style={styles.line} />
-            </View>
-            <Button
-              label="Continue with Google"
-              variant="secondary"
-              onPress={loginWithGoogle}
-              testID="auth-google-login-button"
-            />
+            {googleConfigured() ? (
+              <>
+                <View style={styles.divider}>
+                  <View style={styles.line} />
+                  <Text style={[typography.caption, { color: colors.textLow, marginHorizontal: 12 }]}>
+                    or continue with
+                  </Text>
+                  <View style={styles.line} />
+                </View>
+                <GoogleButton busy={busy} onToken={loginWithGoogle} onError={setErr} />
+              </>
+            ) : null}
             <Pressable
               onPress={() => router.replace("/(auth)/sign-up")}
               testID="signin-go-signup"
