@@ -98,7 +98,7 @@ export default function ProjectDetail() {
         <Pressable onPress={() => router.back()} testID="project-back" style={styles.iconBtn}>
           <Ionicons name="chevron-back" color={colors.textHigh} size={24} />
         </Pressable>
-        <Text style={[typography.h3, { color: colors.textHigh, flex: 1, marginHorizontal: spacing.md }]} numberOfLines={1}>
+        <Text testID="project-detail-header-title" style={[typography.h3, { color: colors.textHigh, flex: 1, marginHorizontal: spacing.md }]} numberOfLines={1}>
           {project.title}
         </Text>
         <Pressable onPress={duplicate} testID="project-duplicate" style={styles.iconBtn}>
