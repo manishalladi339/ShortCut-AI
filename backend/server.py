@@ -103,7 +103,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     else:
         body = {"error": {"code": "http_error", "message": str(detail)}}
     body.setdefault("request_id", getattr(request.state, "request_id", None))
-    return JSONResponse(status_code=exc.status_code, content=body)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=body,
+        headers=exc.headers,
+    )
 
 
 api = APIRouter(prefix="/api")
