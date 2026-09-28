@@ -85,7 +85,20 @@ def test_forgot_password_always_ok(api_url, session, fresh_user):
     assert r2.json() == {"ok": True}
 
 
-def test_google_invalid_session_token_401(api_url, session):
-    r = session.post(f"{api_url}/auth/google", json={"session_token": "random-not-valid-token"})
-    assert r.status_code == 401
-    assert r.json()["error"]["code"] == "auth.google_invalid"
+def test_google_is_disabled_without_first_party_configuration(api_url, session):
+    r = session.post(f"{api_url}/auth/google", json={"id_token": "not-a-real-google-id-token"})
+    assert r.status_code == 503
+    assert r.json()["error"]["code"] == "auth.google_disabled"
+
+
+def test_authenticated_user_can_delete_account(api_url, session, fresh_user):
+    r = session.delete(
+        f"{api_url}/users/me",
+        headers=fresh_user["auth_headers"],
+        json={"confirmation": "DELETE"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["ok"] is True
+
+    me = session.get(f"{api_url}/auth/me", headers=fresh_user["auth_headers"])
+    assert me.status_code == 401
