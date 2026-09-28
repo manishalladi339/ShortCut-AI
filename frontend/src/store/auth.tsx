@@ -62,14 +62,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [finishAuth],
   );
 
-  const google: AuthContextValue["google"] = useCallback(
-    async (session_token) => {
-      const r = await authApi.google(session_token);
-      await finishAuth(r);
-    },
-    [finishAuth],
-  );
-
   const signout: AuthContextValue["signout"] = useCallback(async () => {
     try {
       const refresh = await storage.secureGet(REFRESH_KEY, null as string | null);
@@ -91,8 +83,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ ...state, signin, signup, google, signout, refreshMe }),
-    [state, signin, signup, google, signout, refreshMe],
+    () => ({ ...state, signin, signup, signout, refreshMe }),
+    [state, signin, signup, signout, refreshMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
