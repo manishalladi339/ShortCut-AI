@@ -31,8 +31,8 @@ test("legal pages are reachable before signup", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("welcome-signup-button").click();
   await page.getByText("Terms of Service").click();
-  await expect(page.getByText("Terms of Service").first()).toBeVisible();
+  await expect(page.getByTestId("legal-page-title")).toHaveText("Terms of Service");
   await page.goBack();
   await page.getByText("Privacy Policy").click();
-  await expect(page.getByText("Privacy Policy").first()).toBeVisible();
+  await expect(page.getByTestId("legal-page-title")).toHaveText("Privacy Policy");
 });
