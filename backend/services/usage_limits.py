@@ -108,7 +108,8 @@ async def _enforce_daily_free_limit(
     message: str,
 ) -> None:
     """Cap cost-generating work per UTC day for free-beta accounts."""
-    if str(user.get("subscription_tier", "free")) != "free":
+    tier = user.get("subscription_tier", "free")
+    if getattr(tier, "value", tier) != "free":
         return
     day_start = utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
     count = await get_db()[collection_name].count_documents(
