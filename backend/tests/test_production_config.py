@@ -9,12 +9,14 @@ def _valid_production(monkeypatch):
     monkeypatch.setattr(settings, "JWT_SECRET", "x" * 48)
     monkeypatch.setattr(settings, "CORS_ORIGINS", ["https://app.shortcut.example"])
     monkeypatch.setattr(settings, "APP_PUBLIC_URL", "https://api.shortcut.example")
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
     monkeypatch.setattr(settings, "STORAGE_BACKEND", "s3")
     monkeypatch.setattr(settings, "S3_BUCKET", "shortcut-production")
     monkeypatch.setattr(settings, "TRANSCRIPTION_PROVIDER", "openai")
     monkeypatch.setattr(settings, "VISION_PROVIDER", "openai")
     monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "openai")
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-production-key")
+    monkeypatch.setattr(settings, "SENTRY_DSN", "https://public@example.ingest.sentry.io/1")
     monkeypatch.setattr(settings, "PASSWORD_RESET_EMAIL_PROVIDER", "resend")
     monkeypatch.setattr(settings, "RESEND_API_KEY", "test-resend-key")
     monkeypatch.setattr(
@@ -55,6 +57,13 @@ def test_production_requires_https_public_url(monkeypatch):
         settings.validate_runtime()
 
 
+def test_production_requires_rate_limiting(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
+    with pytest.raises(RuntimeError, match="RATE_LIMIT_ENABLED"):
+        settings.validate_runtime()
+
+
 def test_production_requires_shared_s3_storage(monkeypatch):
     _valid_production(monkeypatch)
     monkeypatch.setattr(settings, "STORAGE_BACKEND", "local")
@@ -68,6 +77,12 @@ def test_production_requires_ai_key_when_openai_enabled(monkeypatch):
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
         settings.validate_runtime()
 
+
+def test_production_requires_sentry_monitoring(monkeypatch):
+    _valid_production(monkeypatch)
+    monkeypatch.setattr(settings, "SENTRY_DSN", "")
+    with pytest.raises(RuntimeError, match="SENTRY_DSN"):
+        settings.validate_runtime()
 
 
 def test_production_requires_reset_email_provider(monkeypatch):
